@@ -112,6 +112,7 @@ const elements = {
   searchPlace: document.querySelector("#search-place"),
   selectedPlace: document.querySelector("#selected-place"),
   placeResults: document.querySelector("#place-results"),
+  showCountry: document.querySelector("#show-country"),
   exportRecords: document.querySelector("#export-records"),
   importRecords: document.querySelector("#import-records"),
   importFile: document.querySelector("#import-file"),
@@ -125,7 +126,7 @@ const elements = {
 const mapState = {
   map: null,
   ready: false,
-  markerLabels: new Map()
+  overlays: []
 };
 
 let records = [];
@@ -166,10 +167,6 @@ async function initMap() {
     mapState.map.enableScrollWheelZoom(true);
     mapState.ready = true;
     elements.mapLoading.hidden = true;
-
-    ["zoomend", "moveend", "moving", "resize"].forEach((eventName) => {
-      mapState.map.addEventListener(eventName, positionMarkerLabels);
-    });
   } catch {
     elements.mapLoading.textContent = "百度地图加载失败，请检查 baiduAk";
   }
@@ -561,77 +558,97 @@ function stringifyDailyEvents(events = []) {
     .join("\n");
 }
 
+function clearMapOverlays() {
+  if (!mapState.ready) {
+    return;
+  }
+
+  mapState.overlays.forEach((overlay) => mapState.map.removeOverlay(overlay));
+  mapState.overlays = [];
+}
+
+function addMapMarker(point, labelText, type, onClick) {
+  const marker = new BMapGL.Marker(point);
+  const offset = type === "city" ? new BMapGL.Size(18, -28) : new BMapGL.Size(16, -24);
+  const label = new BMapGL.Label(labelText, { offset });
+
+  label.setStyle({
+    border: "1px solid rgba(224, 191, 115, 0.35)",
+    borderRadius: "999px",
+    color: "#f8ead1",
+    backgroundColor: "rgba(12, 18, 28, 0.84)",
+    boxShadow: "0 10px 24px rgba(0, 0, 0, 0.32)",
+    padding: "4px 8px",
+    fontSize: "12px",
+    lineHeight: "16px",
+    whiteSpace: "nowrap"
+  });
+
+  marker.setLabel(label);
+  marker.addEventListener("click", onClick);
+  mapState.map.addOverlay(marker);
+  mapState.overlays.push(marker);
+  return marker;
+}
+
 function render() {
   const ordered = sortedRecords();
   const groups = groupRecordsByCity();
   const fallbackRecord = ordered[0];
 
-  if (!activeCity && fallbackRecord) {
-    activeCity = fallbackRecord.city;
-  }
-
   if (activeCity && !groups.has(activeCity)) {
-    activeCity = fallbackRecord?.city ?? null;
+    activeCity = null;
   }
 
-  const cityRecords = groups.get(activeCity) ?? [];
+  const visibleRecords = activeCity ? groups.get(activeCity) ?? [] : ordered;
 
-  if (!cityRecords.some((record) => record.id === activeId)) {
-    activeId = cityRecords[0]?.id ?? fallbackRecord?.id ?? null;
+  if (!visibleRecords.some((record) => record.id === activeId)) {
+    activeId = visibleRecords[0]?.id ?? fallbackRecord?.id ?? null;
   }
 
   elements.totalCount.textContent = records.length;
   elements.cityCount.textContent = new Set(records.map((record) => record.city)).size;
 
   renderMarkers(groups);
-  renderTimeline(cityRecords);
-  renderDetail(records.find((record) => record.id === activeId) ?? cityRecords[0] ?? fallbackRecord);
+  renderTimeline(visibleRecords);
+  renderDetail(records.find((record) => record.id === activeId) ?? visibleRecords[0] ?? fallbackRecord);
 }
 
 function renderMarkers(groups) {
   elements.markerLayer.innerHTML = "";
-  mapState.markerLabels.clear();
+  clearMapOverlays();
 
   if (!mapState.ready) {
     return;
   }
 
-  [...groups.entries()].forEach(([city, cityRecords], index) => {
+  if (activeCity && groups.has(activeCity)) {
+    renderPlaceMarkers(groups.get(activeCity));
+    return;
+  }
+
+  [...groups.entries()].forEach(([city, cityRecords]) => {
     const coordinates = getCityCoordinates(city, cityRecords);
 
     if (!coordinates) {
       return;
     }
 
-    const button = document.createElement("button");
-    button.className = `map-marker city-pin${city === activeCity ? " active" : ""}`;
-    button.dataset.city = `${city} · ${cityRecords.length}次`;
-    button.type = "button";
-    button.ariaLabel = `查看${city}的见面记录`;
-    button.innerHTML = `<span>${cityRecords.length}</span>`;
-    button.addEventListener("click", () => selectCity(city));
-    elements.markerLayer.append(button);
-
-    mapState.markerLabels.set(city, {
-      label: button,
-      point: new BMapGL.Point(coordinates.lng, coordinates.lat)
-    });
+    const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
+    addMapMarker(point, `${city} · ${cityRecords.length}次`, "city", () => selectCity(city));
   });
-
-  positionMarkerLabels();
 }
 
-function positionMarkerLabels() {
-  if (!mapState.ready) {
-    return;
-  }
+function renderPlaceMarkers(cityRecords) {
+  cityRecords.forEach((record) => {
+    const coordinates = getCoordinates(record);
 
-  mapState.markerLabels.forEach(({ label, point }) => {
-    const pixel = mapState.map.pointToOverlayPixel
-      ? mapState.map.pointToOverlayPixel(point)
-      : mapState.map.pointToPixel(point);
-    label.style.left = `${pixel.x}px`;
-    label.style.top = `${pixel.y}px`;
+    if (!coordinates) {
+      return;
+    }
+
+    const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
+    addMapMarker(point, record.placeName || record.scene, "place", () => selectRecord(record.id));
   });
 }
 
@@ -648,7 +665,6 @@ function focusMapOnRecord(record, shouldZoom = true) {
   const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
   const targetZoom = shouldZoom ? Math.max(mapState.map.getZoom(), 15) : mapState.map.getZoom();
   mapState.map.centerAndZoom(point, targetZoom);
-  window.setTimeout(positionMarkerLabels, 80);
 }
 
 function focusMapOnCity(city, shouldZoom = true) {
@@ -667,7 +683,17 @@ function focusMapOnCity(city, shouldZoom = true) {
   const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
   const targetZoom = shouldZoom ? Math.max(mapState.map.getZoom(), 11) : Math.max(mapState.map.getZoom(), 5);
   mapState.map.centerAndZoom(point, targetZoom);
-  window.setTimeout(positionMarkerLabels, 80);
+}
+
+function showCountryMap() {
+  activeCity = null;
+  render();
+
+  if (!mapState.ready) {
+    return;
+  }
+
+  mapState.map.centerAndZoom(new BMapGL.Point(104.1954, 35.8617), 5);
 }
 
 function renderTimeline(ordered) {
@@ -1041,6 +1067,7 @@ async function handleSubmit(event) {
       }
 
       activeId = record.id;
+      activeCity = record.city;
       closeDialog();
       await loadCloudRecords();
     } else {
@@ -1052,6 +1079,7 @@ async function handleSubmit(event) {
         ? records.map((item) => (item.id === record.id ? record : item))
         : [...records, record];
       activeId = record.id;
+      activeCity = record.city;
       saveLocalRecords();
       closeDialog();
       render();
@@ -1085,6 +1113,7 @@ function formatCloudError(error) {
 async function resetDemoRecords() {
   records = demoRecords;
   activeId = records[0].id;
+  activeCity = null;
 
   if (cloudEnabled) {
     const { error } = await cloud.from(tableName).upsert(demoRecords.map(toCloudRecord));
@@ -1191,6 +1220,7 @@ async function handleImport(event) {
 
     records = imported;
     activeId = records[0].id;
+    activeCity = null;
     await ensureRecordLocations(false);
 
     if (cloudEnabled) {
@@ -1215,6 +1245,7 @@ async function handleImport(event) {
 elements.openForm.addEventListener("click", () => openDialog());
 elements.editRecord.addEventListener("click", openEditDialog);
 elements.deleteRecord.addEventListener("click", deleteActiveRecord);
+elements.showCountry.addEventListener("click", showCountryMap);
 elements.searchCity.addEventListener("click", handleCitySearch);
 elements.searchPlace.addEventListener("click", handlePlaceSearch);
 elements.form.city.addEventListener("input", handleCityInputChange);
