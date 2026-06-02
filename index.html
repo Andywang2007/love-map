@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>异地恋见面地图</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./config.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="top-bar" aria-label="见面记录总览">
+        <div>
+          <p class="eyebrow">Our Long Distance Map</p>
+          <h1>每一次奔赴，都在地图上留下一个点</h1>
+        </div>
+        <div class="summary" aria-label="统计信息">
+          <div>
+            <strong id="total-count">0</strong>
+            <span>次见面</span>
+          </div>
+          <div>
+            <strong id="city-count">0</strong>
+            <span>座城市</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <section class="map-panel" aria-label="见面地图">
+          <div class="map-toolbar">
+            <div>
+              <p class="panel-label">Map</p>
+              <h2>见面城市</h2>
+            </div>
+            <div class="toolbar-actions">
+              <button class="ghost-button" id="export-records" type="button">导出记录</button>
+              <button class="ghost-button" id="import-records" type="button">导入记录</button>
+              <button class="primary-button" id="open-form" type="button">
+                <span aria-hidden="true">+</span>
+                新增记录
+              </button>
+            </div>
+            <input id="import-file" accept="application/json" hidden type="file" />
+          </div>
+          <p class="sync-status" id="sync-status">本地模式</p>
+
+          <div class="map-canvas" id="map-canvas">
+            <svg class="route-lines" viewBox="0 0 100 100" aria-hidden="true">
+              <path id="route-path" d="" />
+            </svg>
+            <div class="map-label north">北</div>
+            <div class="map-label south">南</div>
+            <div class="map-label east">东</div>
+            <div class="map-label west">西</div>
+            <div class="map-water">海</div>
+            <div class="marker-layer" id="marker-layer"></div>
+          </div>
+        </section>
+
+        <aside class="detail-panel" aria-live="polite">
+          <div class="detail-heading">
+            <p class="panel-label">Current Memory</p>
+            <h2 id="detail-city">选择一个城市</h2>
+          </div>
+
+          <div class="detail-meta">
+            <div>
+              <span>时间</span>
+              <strong id="detail-time">-</strong>
+            </div>
+            <div>
+              <span>住处</span>
+              <strong id="detail-stay">-</strong>
+            </div>
+            <div>
+              <span>场景</span>
+              <strong id="detail-scene">-</strong>
+            </div>
+          </div>
+
+          <p class="memory-note" id="detail-note">点开地图上的一个点，查看这次见面的具体记录。</p>
+
+          <div class="photo-grid" id="photo-grid" aria-label="照片"></div>
+
+          <div class="timeline-wrap">
+            <div class="timeline-head">
+              <p class="panel-label">Timeline</p>
+              <button class="ghost-button" id="reset-demo" type="button">恢复示例</button>
+            </div>
+            <ol class="timeline" id="timeline"></ol>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <dialog class="record-dialog" id="record-dialog" aria-labelledby="dialog-title">
+      <form class="record-form" id="record-form" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="panel-label">New Memory</p>
+            <h2 id="dialog-title">新增见面记录</h2>
+          </div>
+          <button class="icon-button" id="close-form" type="button" aria-label="关闭">x</button>
+        </div>
+
+        <label>
+          城市
+          <input name="city" required placeholder="例如：上海" />
+        </label>
+
+        <div class="form-row">
+          <label>
+            开始日期
+            <input name="startDate" required type="date" />
+          </label>
+          <label>
+            结束日期
+            <input name="endDate" type="date" />
+          </label>
+        </div>
+
+        <label>
+          住哪里
+          <input name="stay" required placeholder="例如：外滩附近的小酒店" />
+        </label>
+
+        <label>
+          见面场景
+          <input name="scene" required placeholder="例如：车站重逢、生日、一起看海" />
+        </label>
+
+        <label>
+          具体内容
+          <textarea name="note" required rows="4" placeholder="写下这次见面的细节"></textarea>
+        </label>
+
+        <label>
+          照片
+          <input name="photos" accept="image/*" multiple type="file" />
+        </label>
+
+        <div class="dialog-actions">
+          <button class="ghost-button" id="cancel-form" type="button">取消</button>
+          <button class="primary-button" type="submit">保存记录</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
