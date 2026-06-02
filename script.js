@@ -899,7 +899,7 @@ async function handleSubmit(event) {
       const { error } = await request;
 
       if (error) {
-        throw new Error(`云端保存失败：${error.message || error.details || "请检查 Supabase 表字段和权限"}`);
+        throw new Error(formatCloudError(error));
       }
 
       activeId = record.id;
@@ -927,6 +927,16 @@ async function handleSubmit(event) {
     submitButton.disabled = false;
     submitButton.textContent = editingId ? "保存修改" : "保存记录";
   }
+}
+
+function formatCloudError(error) {
+  const message = error.message || error.details || "";
+
+  if (message.includes("latitude") || message.includes("longitude") || message.includes("place_name")) {
+    return "云端数据库还没升级：请在 Supabase SQL Editor 运行新增地点字段的 SQL。";
+  }
+
+  return `云端保存失败：${message || "请检查 Supabase 表字段和权限"}`;
 }
 
 async function resetDemoRecords() {
