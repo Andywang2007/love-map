@@ -130,8 +130,9 @@ function initGlobe() {
   controls.enablePan = false;
   controls.minDistance = 3.2;
   controls.maxDistance = 9;
-  controls.rotateSpeed = 0.55;
-  controls.zoomSpeed = 0.75;
+  controls.rotateSpeed = 0.22;
+  controls.zoomSpeed = 0.45;
+  controls.dampingFactor = 0.07;
 
   scene.add(new THREE.AmbientLight(0xffffff, 1.35));
 
@@ -205,8 +206,8 @@ function initGlobe() {
 
   function animate() {
     controls.update();
-    stars.rotation.y += 0.00045;
-    clouds.rotation.y += 0.00022;
+    stars.rotation.y += 0.00012;
+    clouds.rotation.y += 0.00005;
     updateMarkerLabels(camera, pins);
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
@@ -218,7 +219,9 @@ function initGlobe() {
     pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
     raycaster.setFromCamera(pointer, camera);
 
-    const hit = raycaster.intersectObjects([...pins.values()].map((pin) => pin.mesh))[0];
+    const hit = raycaster
+      .intersectObjects([...pins.values()].map((pin) => pin.hitTarget))
+      .find((candidate) => isPointFacingCamera(candidate.object, camera));
     if (hit?.object.userData.recordId) {
       selectRecord(hit.object.userData.recordId);
     }
@@ -470,6 +473,17 @@ function addGlobePin(record, index, coordinates, label) {
   marker.position.copy(position);
   marker.userData.recordId = record.id;
 
+  const hitTarget = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 16, 16),
+    new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false
+    })
+  );
+  hitTarget.position.copy(position);
+  hitTarget.userData.recordId = record.id;
+
   const stem = new THREE.Mesh(
     new THREE.CylinderGeometry(0.005, 0.005, 0.16, 12),
     new THREE.MeshStandardMaterial({ color: 0xdce7f7, roughness: 0.35 })
@@ -480,8 +494,9 @@ function addGlobePin(record, index, coordinates, label) {
   const group = new THREE.Group();
   group.add(stem);
   group.add(marker);
+  group.add(hitTarget);
   globe.earth.add(group);
-  globe.pins.set(record.id, { mesh: marker, group, label, position, index });
+  globe.pins.set(record.id, { mesh: marker, hitTarget, group, label, position, index });
 }
 
 function updateMarkerLabels(camera, pins) {
@@ -496,9 +511,7 @@ function updateMarkerLabels(camera, pins) {
     const worldPosition = new THREE.Vector3();
     pin.mesh.getWorldPosition(worldPosition);
 
-    const cameraDirection = worldPosition.clone().sub(camera.position).normalize();
-    const surfaceNormal = worldPosition.clone().normalize();
-    const isVisible = cameraDirection.dot(surfaceNormal) < -0.2;
+    const isVisible = isPointFacingCamera(pin.mesh, camera);
     const projected = worldPosition.clone().project(camera);
 
     pin.label.hidden = !isVisible;
@@ -506,6 +519,15 @@ function updateMarkerLabels(camera, pins) {
     pin.label.style.left = `${((projected.x + 1) / 2) * width}px`;
     pin.label.style.top = `${((-projected.y + 1) / 2) * height}px`;
   });
+}
+
+function isPointFacingCamera(object, camera) {
+  const worldPosition = new THREE.Vector3();
+  object.getWorldPosition(worldPosition);
+
+  const cameraDirection = worldPosition.clone().sub(camera.position).normalize();
+  const surfaceNormal = worldPosition.clone().normalize();
+  return cameraDirection.dot(surfaceNormal) < -0.18;
 }
 
 function renderTimeline(ordered) {
