@@ -6,6 +6,14 @@
     <title>异地恋见面地图</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+        }
+      }
+    </script>
     <script src="./config.js"></script>
   </head>
   <body>
@@ -46,15 +54,8 @@
           </div>
           <p class="sync-status" id="sync-status">本地模式</p>
 
-          <div class="map-canvas" id="map-canvas">
-            <svg class="route-lines" viewBox="0 0 100 100" aria-hidden="true">
-              <path id="route-path" d="" />
-            </svg>
-            <div class="map-label north">北</div>
-            <div class="map-label south">南</div>
-            <div class="map-label east">东</div>
-            <div class="map-label west">西</div>
-            <div class="map-water">海</div>
+          <div class="globe-canvas" id="globe-canvas">
+            <div class="globe-hint">拖动旋转 · 滚轮放大 · 点击坐标查看</div>
             <div class="marker-layer" id="marker-layer"></div>
           </div>
         </section>
@@ -148,6 +149,6 @@
       </form>
     </dialog>
 
-    <script src="./script.js"></script>
+    <script type="module" src="./script.js"></script>
   </body>
 </html>

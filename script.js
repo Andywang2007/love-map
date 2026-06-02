@@ -1,20 +1,23 @@
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
 const STORAGE_KEY = "long-distance-meeting-records";
 
 const cityPositions = {
-  北京: { x: 59, y: 26 },
-  上海: { x: 72, y: 55 },
-  杭州: { x: 69, y: 59 },
-  南京: { x: 67, y: 51 },
-  广州: { x: 61, y: 78 },
-  深圳: { x: 63, y: 82 },
-  成都: { x: 42, y: 58 },
-  重庆: { x: 47, y: 63 },
-  武汉: { x: 57, y: 57 },
-  西安: { x: 48, y: 43 },
-  厦门: { x: 68, y: 74 },
-  青岛: { x: 68, y: 38 },
-  长沙: { x: 56, y: 66 },
-  香港: { x: 64, y: 84 }
+  北京: { lat: 39.9042, lng: 116.4074 },
+  上海: { lat: 31.2304, lng: 121.4737 },
+  杭州: { lat: 30.2741, lng: 120.1551 },
+  南京: { lat: 32.0603, lng: 118.7969 },
+  广州: { lat: 23.1291, lng: 113.2644 },
+  深圳: { lat: 22.5431, lng: 114.0579 },
+  成都: { lat: 30.5728, lng: 104.0668 },
+  重庆: { lat: 29.563, lng: 106.5516 },
+  武汉: { lat: 30.5928, lng: 114.3055 },
+  西安: { lat: 34.3416, lng: 108.9398 },
+  厦门: { lat: 24.4798, lng: 118.0894 },
+  青岛: { lat: 36.0671, lng: 120.3826 },
+  长沙: { lat: 28.2282, lng: 112.9388 },
+  香港: { lat: 22.3193, lng: 114.1694 }
 };
 
 const demoRecords = [
@@ -66,8 +69,8 @@ const cloudEnabled = Boolean(config.url && config.anonKey && window.supabase);
 const cloud = cloudEnabled ? window.supabase.createClient(config.url, config.anonKey) : null;
 
 const elements = {
+  globeCanvas: document.querySelector("#globe-canvas"),
   markerLayer: document.querySelector("#marker-layer"),
-  routePath: document.querySelector("#route-path"),
   timeline: document.querySelector("#timeline"),
   photoGrid: document.querySelector("#photo-grid"),
   totalCount: document.querySelector("#total-count"),
@@ -91,10 +94,113 @@ const elements = {
 
 let records = [];
 let activeId = null;
+let globe = null;
 
 init();
 
+function initGlobe() {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  const pins = new Map();
+  const radius = 2;
+
+  camera.position.set(0, 0.45, 6.4);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.domElement.className = "globe-renderer";
+  elements.globeCanvas.prepend(renderer.domElement);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.enablePan = false;
+  controls.minDistance = 3.2;
+  controls.maxDistance = 9;
+  controls.rotateSpeed = 0.55;
+  controls.zoomSpeed = 0.75;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 1.35));
+
+  const sunlight = new THREE.DirectionalLight(0xffffff, 2.4);
+  sunlight.position.set(3, 2, 4);
+  scene.add(sunlight);
+
+  const earthTexture = new THREE.TextureLoader().load(
+    "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg"
+  );
+  const bumpTexture = new THREE.TextureLoader().load(
+    "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png"
+  );
+
+  const earth = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 96, 96),
+    new THREE.MeshStandardMaterial({
+      map: earthTexture,
+      bumpMap: bumpTexture,
+      bumpScale: 0.035,
+      roughness: 0.78,
+      metalness: 0.08
+    })
+  );
+  scene.add(earth);
+
+  const atmosphere = new THREE.Mesh(
+    new THREE.SphereGeometry(radius * 1.035, 96, 96),
+    new THREE.MeshBasicMaterial({
+      color: 0x8cc7ff,
+      transparent: true,
+      opacity: 0.14,
+      side: THREE.BackSide
+    })
+  );
+  scene.add(atmosphere);
+
+  const stars = new THREE.Points(
+    new THREE.BufferGeometry().setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(createStars(), 3)
+    ),
+    new THREE.PointsMaterial({ color: 0xffffff, opacity: 0.45, size: 0.018, transparent: true })
+  );
+  scene.add(stars);
+
+  function resize() {
+    const { width, height } = elements.globeCanvas.getBoundingClientRect();
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height);
+  }
+
+  function animate() {
+    controls.update();
+    stars.rotation.y += 0.00045;
+    updateMarkerLabels(camera, pins);
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+
+  renderer.domElement.addEventListener("click", (event) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+    raycaster.setFromCamera(pointer, camera);
+
+    const hit = raycaster.intersectObjects([...pins.values()].map((pin) => pin.mesh))[0];
+    if (hit?.object.userData.recordId) {
+      selectRecord(hit.object.userData.recordId);
+    }
+  });
+
+  window.addEventListener("resize", resize);
+  resize();
+  animate();
+
+  globe = { scene, camera, earth, pins, radius };
+}
+
 async function init() {
+  initGlobe();
   setStatus(cloudEnabled ? "正在连接云端..." : "本地模式：填写 config.js 后开启云端同步");
 
   if (cloudEnabled) {
@@ -205,7 +311,7 @@ function formatDate(dateText) {
   }).format(date);
 }
 
-function getPosition(record) {
+function getCoordinates(record) {
   if (cityPositions[record.city]) {
     return cityPositions[record.city];
   }
@@ -216,9 +322,38 @@ function getPosition(record) {
   }
 
   return {
-    x: 22 + (total % 56),
-    y: 24 + ((total * 7) % 58)
+    lat: 16 + (total % 34),
+    lng: 85 + ((total * 11) % 55)
   };
+}
+
+function latLngToVector3(lat, lng, radius) {
+  const phi = THREE.MathUtils.degToRad(90 - lat);
+  const theta = THREE.MathUtils.degToRad(lng + 180);
+
+  return new THREE.Vector3(
+    -(radius * Math.sin(phi) * Math.cos(theta)),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+function createStars() {
+  const vertices = [];
+
+  for (let index = 0; index < 850; index += 1) {
+    const distance = 18 + Math.random() * 18;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+
+    vertices.push(
+      distance * Math.sin(phi) * Math.cos(theta),
+      distance * Math.sin(phi) * Math.sin(theta),
+      distance * Math.cos(phi)
+    );
+  }
+
+  return vertices;
 }
 
 function sortedRecords() {
@@ -231,35 +366,98 @@ function render() {
   elements.cityCount.textContent = new Set(records.map((record) => record.city)).size;
 
   renderMarkers(ordered);
-  renderRoute(ordered);
   renderTimeline(ordered);
   renderDetail(records.find((record) => record.id === activeId) ?? ordered[0]);
 }
 
 function renderMarkers(ordered) {
   elements.markerLayer.innerHTML = "";
+  clearGlobePins();
 
   ordered.forEach((record, index) => {
-    const position = getPosition(record);
+    const coordinates = getCoordinates(record);
     const button = document.createElement("button");
     button.className = `map-marker${record.id === activeId ? " active" : ""}`;
-    button.style.left = `${position.x}%`;
-    button.style.top = `${position.y}%`;
+    button.hidden = true;
     button.dataset.city = record.city;
     button.type = "button";
     button.ariaLabel = `查看${record.city}的见面记录`;
     button.textContent = index + 1;
     button.addEventListener("click", () => selectRecord(record.id));
     elements.markerLayer.append(button);
+    addGlobePin(record, index, coordinates, button);
   });
 }
 
-function renderRoute(ordered) {
-  const points = ordered.map(getPosition);
-  elements.routePath.setAttribute(
-    "d",
-    points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ")
+function clearGlobePins() {
+  if (!globe) {
+    return;
+  }
+
+  globe.pins.forEach((pin) => {
+    globe.earth.remove(pin.group);
+    pin.group.children.forEach((child) => {
+      child.geometry.dispose();
+      child.material.dispose();
+    });
+  });
+  globe.pins.clear();
+}
+
+function addGlobePin(record, index, coordinates, label) {
+  if (!globe) {
+    return;
+  }
+
+  const position = latLngToVector3(coordinates.lat, coordinates.lng, globe.radius + 0.04);
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(record.id === activeId ? 0.075 : 0.055, 24, 24),
+    new THREE.MeshStandardMaterial({
+      color: record.id === activeId ? 0xffd36b : 0xff6578,
+      emissive: record.id === activeId ? 0x8c5b00 : 0x7a1022,
+      emissiveIntensity: 0.35,
+      roughness: 0.4
+    })
   );
+  marker.position.copy(position);
+  marker.userData.recordId = record.id;
+
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.012, 0.012, 0.22, 12),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 })
+  );
+  stem.position.copy(latLngToVector3(coordinates.lat, coordinates.lng, globe.radius + 0.015));
+  stem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), stem.position.clone().normalize());
+
+  const group = new THREE.Group();
+  group.add(stem);
+  group.add(marker);
+  globe.earth.add(group);
+  globe.pins.set(record.id, { mesh: marker, group, label, position, index });
+}
+
+function updateMarkerLabels(camera, pins) {
+  if (!globe) {
+    return;
+  }
+
+  const width = elements.globeCanvas.clientWidth;
+  const height = elements.globeCanvas.clientHeight;
+
+  pins.forEach((pin, recordId) => {
+    const worldPosition = new THREE.Vector3();
+    pin.mesh.getWorldPosition(worldPosition);
+
+    const cameraDirection = worldPosition.clone().sub(camera.position).normalize();
+    const surfaceNormal = worldPosition.clone().normalize();
+    const isVisible = cameraDirection.dot(surfaceNormal) < -0.2;
+    const projected = worldPosition.clone().project(camera);
+
+    pin.label.hidden = !isVisible;
+    pin.label.classList.toggle("active", recordId === activeId);
+    pin.label.style.left = `${((projected.x + 1) / 2) * width}px`;
+    pin.label.style.top = `${((-projected.y + 1) / 2) * height}px`;
+  });
 }
 
 function renderTimeline(ordered) {
