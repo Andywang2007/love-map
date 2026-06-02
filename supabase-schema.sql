@@ -4,6 +4,7 @@ create table if not exists public.meeting_records (
   place_name text,
   latitude double precision,
   longitude double precision,
+  places jsonb not null default '[]'::jsonb,
   start_date date not null,
   end_date date,
   stay text not null,
@@ -18,6 +19,7 @@ alter table public.meeting_records
 add column if not exists place_name text,
 add column if not exists latitude double precision,
 add column if not exists longitude double precision,
+add column if not exists places jsonb not null default '[]'::jsonb,
 add column if not exists daily_events jsonb not null default '[]'::jsonb;
 
 alter table public.meeting_records enable row level security;

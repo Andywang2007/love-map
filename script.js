@@ -24,6 +24,7 @@ const demoRecords = [
     placeName: "外滩观景平台",
     latitude: 31.2407,
     longitude: 121.4908,
+    places: [{ name: "外滩观景平台", latitude: 31.2407, longitude: 121.4908 }],
     startDate: "2025-10-02",
     endDate: "2025-10-05",
     stay: "外滩附近的小酒店",
@@ -44,6 +45,7 @@ const demoRecords = [
     placeName: "西湖断桥",
     latitude: 30.2586,
     longitude: 120.1494,
+    places: [{ name: "西湖断桥", latitude: 30.2586, longitude: 120.1494 }],
     startDate: "2026-01-18",
     endDate: "2026-01-20",
     stay: "西湖边的民宿",
@@ -64,6 +66,7 @@ const demoRecords = [
     placeName: "珠江新城",
     latitude: 23.1199,
     longitude: 113.3236,
+    places: [{ name: "珠江新城", latitude: 23.1199, longitude: 113.3236 }],
     startDate: "2026-04-04",
     endDate: "2026-04-06",
     stay: "珠江新城附近",
@@ -109,9 +112,8 @@ const elements = {
   searchCity: document.querySelector("#search-city"),
   selectedCity: document.querySelector("#selected-city"),
   cityResults: document.querySelector("#city-results"),
-  searchPlace: document.querySelector("#search-place"),
-  selectedPlace: document.querySelector("#selected-place"),
-  placeResults: document.querySelector("#place-results"),
+  placesList: document.querySelector("#places-list"),
+  addPlace: document.querySelector("#add-place"),
   showCountry: document.querySelector("#show-country"),
   exportRecords: document.querySelector("#export-records"),
   importRecords: document.querySelector("#import-records"),
@@ -134,7 +136,6 @@ let activeId = null;
 let activeCity = null;
 let editingId = null;
 let selectedCity = null;
-let selectedPlace = null;
 
 init();
 
@@ -246,12 +247,15 @@ function subscribeToCloudChanges() {
 }
 
 function fromCloudRecord(record) {
+  const places = Array.isArray(record.places) ? record.places : [];
+
   return {
     id: record.id,
     city: record.city,
     placeName: record.place_name ?? "",
     latitude: record.latitude ?? null,
     longitude: record.longitude ?? null,
+    places,
     startDate: record.start_date,
     endDate: record.end_date ?? "",
     stay: record.stay,
@@ -263,12 +267,16 @@ function fromCloudRecord(record) {
 }
 
 function toCloudRecord(record) {
+  const places = getRecordPlaces(record);
+  const primaryPlace = places[0];
+
   return {
     id: record.id,
     city: record.city,
-    place_name: record.placeName || null,
-    latitude: Number.isFinite(record.latitude) ? record.latitude : null,
-    longitude: Number.isFinite(record.longitude) ? record.longitude : null,
+    place_name: primaryPlace?.name || record.placeName || null,
+    latitude: Number.isFinite(primaryPlace?.latitude) ? primaryPlace.latitude : Number.isFinite(record.latitude) ? record.latitude : null,
+    longitude: Number.isFinite(primaryPlace?.longitude) ? primaryPlace.longitude : Number.isFinite(record.longitude) ? record.longitude : null,
+    places,
     start_date: record.startDate,
     end_date: record.endDate || null,
     stay: record.stay,
@@ -302,8 +310,39 @@ function formatDate(dateText) {
   }).format(date);
 }
 
+function normalizePlace(place) {
+  return {
+    name: (place.name || place.title || "").trim(),
+    latitude: Number.isFinite(place.latitude) ? place.latitude : null,
+    longitude: Number.isFinite(place.longitude) ? place.longitude : null
+  };
+}
+
+function getRecordPlaces(record) {
+  const places = Array.isArray(record.places)
+    ? record.places.map(normalizePlace).filter((place) => place.name)
+    : [];
+
+  if (places.length > 0) {
+    return places;
+  }
+
+  if (record.placeName) {
+    return [
+      {
+        name: record.placeName,
+        latitude: Number.isFinite(record.latitude) ? record.latitude : null,
+        longitude: Number.isFinite(record.longitude) ? record.longitude : null
+      }
+    ];
+  }
+
+  return [];
+}
+
 function formatPlace(record) {
-  return record.placeName || record.city;
+  const places = getRecordPlaces(record);
+  return places.length > 0 ? places.map((place) => place.name).join("、") : record.city;
 }
 
 function hasPreciseCoordinates(record) {
@@ -311,6 +350,14 @@ function hasPreciseCoordinates(record) {
 }
 
 function getCoordinates(record) {
+  const precisePlace = getRecordPlaces(record).find(
+    (place) => Number.isFinite(place.latitude) && Number.isFinite(place.longitude)
+  );
+
+  if (precisePlace) {
+    return { lat: precisePlace.latitude, lng: precisePlace.longitude };
+  }
+
   if (hasPreciseCoordinates(record)) {
     return { lat: record.latitude, lng: record.longitude };
   }
@@ -326,18 +373,21 @@ async function ensureRecordLocations(shouldPersist) {
   const updates = [];
 
   for (const record of records) {
-    if (hasPreciseCoordinates(record)) {
+    const currentPlaces = getRecordPlaces(record);
+    const allPlacesLocated =
+      currentPlaces.length > 0 &&
+      currentPlaces.every((place) => Number.isFinite(place.latitude) && Number.isFinite(place.longitude));
+
+    if (hasPreciseCoordinates(record) && allPlacesLocated) {
       continue;
     }
 
     try {
-      const located = await searchPlace(record);
-      record.latitude = located.latitude;
-      record.longitude = located.longitude;
-
-      if (!record.placeName && located.placeName) {
-        record.placeName = located.placeName;
-      }
+      record.places = await resolveRecordPlaces(record);
+      const primaryPlace = record.places[0];
+      record.placeName = primaryPlace?.name || record.placeName;
+      record.latitude = primaryPlace?.latitude ?? record.latitude;
+      record.longitude = primaryPlace?.longitude ?? record.longitude;
 
       updates.push(record);
     } catch {
@@ -354,38 +404,6 @@ async function ensureRecordLocations(shouldPersist) {
       updates.map((record) => cloud.from(tableName).update(toCloudRecord(record)).eq("id", record.id))
     );
   }
-}
-
-function searchPlace(record) {
-  if (!mapState.ready) {
-    return Promise.reject(new Error("Map is not ready"));
-  }
-
-  const keyword = record.placeName || record.city;
-  const location = record.city || mapState.map;
-
-  return new Promise((resolve, reject) => {
-    const localSearch = new BMapGL.LocalSearch(location, {
-      onSearchComplete: (results) => {
-        const status = localSearch.getStatus();
-        const success = status === 0 || status === window.BMAP_STATUS_SUCCESS;
-
-        if (!success || !results || results.getCurrentNumPois() === 0) {
-          reject(new Error("Place not found"));
-          return;
-        }
-
-        const poi = results.getPoi(0);
-        resolve({
-          latitude: poi.point.lat,
-          longitude: poi.point.lng,
-          placeName: poi.title || keyword
-        });
-      }
-    });
-
-    localSearch.search(keyword);
-  });
 }
 
 function searchPlaceCandidates(city, keyword) {
@@ -435,24 +453,20 @@ function getSearchCity() {
   return selectedCity?.title || elements.form.city.value.trim();
 }
 
-async function resolveRecordLocation(record) {
-  if (selectedPlace && selectedPlace.title === record.placeName) {
-    return {
-      latitude: selectedPlace.latitude,
-      longitude: selectedPlace.longitude,
-      placeName: selectedPlace.title
-    };
+async function resolvePlaceLocation(city, place) {
+  if (Number.isFinite(place.latitude) && Number.isFinite(place.longitude)) {
+    return place;
   }
 
-  if (record.placeName) {
+  if (place.name) {
     try {
-      const [candidate] = await searchPlaceCandidates(getSearchCity(), record.placeName);
+      const [candidate] = await searchPlaceCandidates(city, place.name);
 
       if (candidate) {
         return {
+          name: candidate.title,
           latitude: candidate.latitude,
-          longitude: candidate.longitude,
-          placeName: candidate.title
+          longitude: candidate.longitude
         };
       }
     } catch {
@@ -460,49 +474,64 @@ async function resolveRecordLocation(record) {
     }
   }
 
+  const fallback = cityPositions[city];
+
+  if (fallback) {
+    return {
+      name: place.name || city,
+      latitude: fallback.lat,
+      longitude: fallback.lng
+    };
+  }
+
+  throw new Error("Location not found");
+}
+
+async function resolveRecordPlaces(record) {
+  const places = getRecordPlaces(record);
+  const city = record.city || getSearchCity();
+
+  if (places.length > 0) {
+    return Promise.all(places.map((place) => resolvePlaceLocation(city, place)));
+  }
+
   try {
-    return await searchPlace(record);
-  } catch {
-    if (selectedCity && selectedCity.title === record.city) {
-      return {
-        latitude: selectedCity.latitude,
-        longitude: selectedCity.longitude,
-        placeName: record.city
-      };
-    }
+    const [cityCandidate] = await searchPlaceCandidates("", city);
 
-    try {
-      const [cityCandidate] = await searchPlaceCandidates("", record.city);
-
-      if (cityCandidate) {
-        return {
+    if (cityCandidate) {
+      return [
+        {
+          name: city,
           latitude: cityCandidate.latitude,
-          longitude: cityCandidate.longitude,
-          placeName: record.city
-        };
-      }
-    } catch {
-      // Continue to built-in city fallback below.
+          longitude: cityCandidate.longitude
+        }
+      ];
+    }
+  } catch {
+    if (selectedCity && selectedCity.title === city) {
+      return [
+        {
+          name: city,
+          latitude: selectedCity.latitude,
+          longitude: selectedCity.longitude
+        }
+      ];
     }
 
-    const cityOnlyRecord = { ...record, placeName: "" };
+    const fallback = cityPositions[city];
 
-    try {
-      return await searchPlace(cityOnlyRecord);
-    } catch {
-      const fallback = cityPositions[record.city];
-
-      if (fallback) {
-        return {
+    if (fallback) {
+      return [
+        {
+          name: city,
           latitude: fallback.lat,
-          longitude: fallback.lng,
-          placeName: record.city
-        };
-      }
-
-      throw new Error("Location not found");
+          longitude: fallback.lng
+        }
+      ];
     }
   }
+
+  throw new Error("Location not found");
 }
 
 function sortedRecords() {
@@ -641,14 +670,28 @@ function renderMarkers(groups) {
 
 function renderPlaceMarkers(cityRecords) {
   cityRecords.forEach((record) => {
-    const coordinates = getCoordinates(record);
+    const places = getRecordPlaces(record);
 
-    if (!coordinates) {
+    if (places.length === 0) {
+      const coordinates = getCoordinates(record);
+
+      if (!coordinates) {
+        return;
+      }
+
+      const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
+      addMapMarker(point, record.scene, "place", () => selectRecord(record.id));
       return;
     }
 
-    const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
-    addMapMarker(point, record.placeName || record.scene, "place", () => selectRecord(record.id));
+    places.forEach((place) => {
+      if (!Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) {
+        return;
+      }
+
+      const point = new BMapGL.Point(place.longitude, place.latitude);
+      addMapMarker(point, place.name, "place", () => selectRecord(record.id));
+    });
   });
 }
 
@@ -704,7 +747,7 @@ function renderTimeline(ordered) {
     const button = document.createElement("button");
     button.className = record.id === activeId ? "active" : "";
     button.type = "button";
-    button.innerHTML = `<strong>${record.scene}</strong><span>${record.placeName || record.city} · ${formatDateRange(record)}</span>`;
+    button.innerHTML = `<strong>${record.scene}</strong><span>${formatPlace(record)} · ${formatDateRange(record)}</span>`;
     button.addEventListener("click", () => selectRecord(record.id));
     item.append(button);
     elements.timeline.append(item);
@@ -797,10 +840,77 @@ function selectCity(city) {
   focusMapOnCity(city);
 }
 
+function createPlaceRow(place = {}) {
+  const row = document.createElement("div");
+  const input = document.createElement("input");
+  const actions = document.createElement("div");
+  const searchButton = document.createElement("button");
+  const removeButton = document.createElement("button");
+  const selected = document.createElement("span");
+  const results = document.createElement("div");
+
+  row.className = "place-row";
+  row.dataset.latitude = Number.isFinite(place.latitude) ? String(place.latitude) : "";
+  row.dataset.longitude = Number.isFinite(place.longitude) ? String(place.longitude) : "";
+
+  input.className = "place-input";
+  input.placeholder = "例如：北京798艺术中心、北京南站";
+  input.value = place.name || "";
+
+  actions.className = "place-search-actions";
+  searchButton.className = "ghost-button search-place";
+  searchButton.type = "button";
+  searchButton.textContent = "搜索地点";
+  removeButton.className = "ghost-button remove-place";
+  removeButton.type = "button";
+  removeButton.textContent = "删除";
+  selected.className = "selected-place";
+  selected.textContent = place.name ? `已填写：${place.name}` : "未选择地图地点";
+  results.className = "place-results";
+  results.setAttribute("aria-live", "polite");
+
+  actions.append(searchButton, removeButton, selected);
+  row.append(input, actions, results);
+  return row;
+}
+
+function addPlaceRow(place = {}) {
+  elements.placesList.append(createPlaceRow(place));
+}
+
+function renderPlaceRows(places = []) {
+  elements.placesList.innerHTML = "";
+  const rows = places.length > 0 ? places : [{}];
+  rows.forEach(addPlaceRow);
+}
+
+function getPlaceRows() {
+  return [...elements.placesList.querySelectorAll(".place-row")];
+}
+
+function readPlaceRows() {
+  return getPlaceRows()
+    .map((row) => ({
+      name: row.querySelector(".place-input").value.trim(),
+      latitude: row.dataset.latitude ? Number(row.dataset.latitude) : null,
+      longitude: row.dataset.longitude ? Number(row.dataset.longitude) : null
+    }))
+    .filter((place) => place.name);
+}
+
+function clearPlaceSelections() {
+  getPlaceRows().forEach((row) => {
+    row.dataset.latitude = "";
+    row.dataset.longitude = "";
+    row.querySelector(".selected-place").textContent = "未选择地图地点";
+    row.querySelector(".place-results").innerHTML = "";
+  });
+}
+
 function openDialog(record = null) {
   elements.form.reset();
   clearSelectedCity();
-  clearSelectedPlace();
+  renderPlaceRows();
   editingId = record?.id ?? null;
   document.querySelector("#dialog-title").textContent = editingId ? "编辑见面记录" : "新增见面记录";
   elements.form.querySelector('button[type="submit"]').textContent = editingId ? "保存修改" : "保存记录";
@@ -816,17 +926,7 @@ function openDialog(record = null) {
       };
       elements.selectedCity.textContent = `已选择：${selectedCity.title}`;
     }
-    elements.form.placeName.value = record.placeName || "";
-    if (hasPreciseCoordinates(record)) {
-      selectedPlace = {
-        title: record.placeName || record.city,
-        address: "",
-        city: record.city,
-        latitude: record.latitude,
-        longitude: record.longitude
-      };
-      elements.selectedPlace.textContent = `已选择：${selectedPlace.title}`;
-    }
+    renderPlaceRows(getRecordPlaces(record));
     elements.form.startDate.value = record.startDate;
     elements.form.endDate.value = record.endDate || "";
     elements.form.stay.value = record.stay;
@@ -859,17 +959,11 @@ function clearSelectedCity() {
   elements.cityResults.innerHTML = "";
 }
 
-function clearSelectedPlace() {
-  selectedPlace = null;
-  elements.selectedPlace.textContent = "未选择地图地点";
-  elements.placeResults.innerHTML = "";
-}
-
 async function handleCitySearch() {
   const keyword = elements.form.city.value.trim();
 
   clearSelectedCity();
-  clearSelectedPlace();
+  clearPlaceSelections();
 
   if (!mapState.ready) {
     elements.cityResults.textContent = "地图还没加载好，请稍后再试。";
@@ -891,34 +985,41 @@ async function handleCitySearch() {
   }
 }
 
-async function handlePlaceSearch() {
+async function handlePlaceSearch(event) {
+  const row = event.target.closest(".place-row");
   const city = getSearchCity();
-  const keyword = elements.form.placeName.value.trim();
+  const keyword = row?.querySelector(".place-input").value.trim();
+  const results = row?.querySelector(".place-results");
 
-  clearSelectedPlace();
+  if (!row || !results) {
+    return;
+  }
+
+  results.innerHTML = "";
 
   if (!mapState.ready) {
-    elements.placeResults.textContent = "地图还没加载好，请稍后再试。";
+    results.textContent = "地图还没加载好，请稍后再试。";
     return;
   }
 
   if (!keyword) {
-    elements.placeResults.textContent = "先输入一个具体地点，比如“北京南站”。";
+    results.textContent = "先输入一个具体地点，比如“北京南站”。";
     return;
   }
 
-  elements.placeResults.textContent = "正在搜索...";
+  results.textContent = "正在搜索...";
 
   try {
     const candidates = await searchPlaceCandidates(city, keyword);
-    renderPlaceCandidates(candidates);
+    renderPlaceCandidates(candidates, row);
   } catch {
-    elements.placeResults.textContent = "没有找到地点。可以换一个更完整的名称，比如“北京南站”。";
+    results.textContent = "没有找到地点。可以换一个更完整的名称，比如“北京南站”。";
   }
 }
 
-function renderPlaceCandidates(candidates) {
-  elements.placeResults.innerHTML = "";
+function renderPlaceCandidates(candidates, row) {
+  const results = row.querySelector(".place-results");
+  results.innerHTML = "";
 
   candidates.forEach((candidate) => {
     const button = document.createElement("button");
@@ -926,12 +1027,13 @@ function renderPlaceCandidates(candidates) {
     button.className = "place-result";
     button.innerHTML = `<strong>${candidate.title}</strong><span>${candidate.address || "百度地图搜索结果"}</span>`;
     button.addEventListener("click", () => {
-      selectedPlace = candidate;
-      elements.form.placeName.value = candidate.title;
-      elements.selectedPlace.textContent = `已选择：${candidate.title}`;
-      elements.placeResults.innerHTML = "";
+      row.dataset.latitude = String(candidate.latitude);
+      row.dataset.longitude = String(candidate.longitude);
+      row.querySelector(".place-input").value = candidate.title;
+      row.querySelector(".selected-place").textContent = `已选择：${candidate.title}`;
+      results.innerHTML = "";
     });
-    elements.placeResults.append(button);
+    results.append(button);
   });
 }
 
@@ -948,7 +1050,7 @@ function renderCityCandidates(candidates) {
       elements.form.city.value = candidate.title;
       elements.selectedCity.textContent = `已选择：${candidate.title}`;
       elements.cityResults.innerHTML = "";
-      clearSelectedPlace();
+      clearPlaceSelections();
     });
     elements.cityResults.append(button);
   });
@@ -957,13 +1059,38 @@ function renderCityCandidates(candidates) {
 function handleCityInputChange() {
   if (selectedCity && elements.form.city.value.trim() !== selectedCity.title) {
     clearSelectedCity();
-    clearSelectedPlace();
+    clearPlaceSelections();
   }
 }
 
-function handlePlaceInputChange() {
-  if (selectedPlace && elements.form.placeName.value.trim() !== selectedPlace.title) {
-    clearSelectedPlace();
+function handlePlacesListInput(event) {
+  if (event.target.classList.contains("place-input")) {
+    const row = event.target.closest(".place-row");
+    row.dataset.latitude = "";
+    row.dataset.longitude = "";
+    row.querySelector(".selected-place").textContent = "未选择地图地点";
+    row.querySelector(".place-results").innerHTML = "";
+  }
+}
+
+function handlePlacesListClick(event) {
+  const row = event.target.closest(".place-row");
+
+  if (!row) {
+    return;
+  }
+
+  if (event.target.classList.contains("search-place")) {
+    handlePlaceSearch(event);
+    return;
+  }
+
+  if (event.target.classList.contains("remove-place")) {
+    row.remove();
+
+    if (getPlaceRows().length === 0) {
+      addPlaceRow();
+    }
   }
 }
 
@@ -1014,12 +1141,15 @@ async function handleSubmit(event) {
     const formData = new FormData(elements.form);
     const originalRecord = records.find((item) => item.id === editingId);
     const recordId = editingId || `record-${Date.now()}`;
+    const places = readPlaceRows();
+    const primaryPlace = places[0];
     const record = {
       id: recordId,
       city: selectedCity?.title || formData.get("city").trim(),
-      placeName: formData.get("placeName").trim(),
-      latitude: null,
-      longitude: null,
+      placeName: primaryPlace?.name || "",
+      latitude: primaryPlace?.latitude ?? null,
+      longitude: primaryPlace?.longitude ?? null,
+      places,
       startDate: formData.get("startDate"),
       endDate: formData.get("endDate"),
       stay: formData.get("stay").trim(),
@@ -1028,24 +1158,17 @@ async function handleSubmit(event) {
       dailyEvents: parseDailyEvents(formData.get("dailyEvents") || ""),
       photos: originalRecord?.photos ?? []
     };
-    if (selectedPlace && selectedPlace.title === record.placeName) {
-      record.latitude = selectedPlace.latitude;
-      record.longitude = selectedPlace.longitude;
-      record.placeName = selectedPlace.title;
-    } else if (selectedCity && selectedCity.title === record.city && !record.placeName) {
-      record.latitude = selectedCity.latitude;
-      record.longitude = selectedCity.longitude;
-    }
-    let located;
+
     try {
-      located = await resolveRecordLocation(record);
+      record.places = await resolveRecordPlaces(record);
     } catch {
       throw new Error("没有定位到这个城市或地点，请换一个更完整的城市/地点名称。");
     }
 
-    record.latitude = located.latitude;
-    record.longitude = located.longitude;
-    record.placeName = record.placeName || located.placeName;
+    const located = record.places[0];
+    record.latitude = located?.latitude ?? null;
+    record.longitude = located?.longitude ?? null;
+    record.placeName = located?.name || record.placeName || record.city;
 
     if (cloudEnabled) {
       try {
@@ -1102,6 +1225,7 @@ function formatCloudError(error) {
     message.includes("latitude") ||
     message.includes("longitude") ||
     message.includes("place_name") ||
+    message.includes("places") ||
     message.includes("daily_events")
   ) {
     return "云端数据库还没升级：请在 Supabase SQL Editor 运行新增地点字段的 SQL。";
@@ -1138,7 +1262,7 @@ async function deleteActiveRecord() {
     return;
   }
 
-  const confirmed = confirm(`确定删除「${record.placeName || record.city}」这条记录吗？`);
+  const confirmed = confirm(`确定删除「${formatPlace(record)}」这条记录吗？`);
 
   if (!confirmed) {
     return;
@@ -1193,6 +1317,7 @@ function isValidRecord(record) {
     typeof record.id === "string" &&
     typeof record.city === "string" &&
     (typeof record.placeName === "string" || record.placeName === undefined) &&
+    (Array.isArray(record.places) || record.places === undefined) &&
     (typeof record.latitude === "number" || record.latitude === null || record.latitude === undefined) &&
     (typeof record.longitude === "number" || record.longitude === null || record.longitude === undefined) &&
     typeof record.startDate === "string" &&
@@ -1247,9 +1372,10 @@ elements.editRecord.addEventListener("click", openEditDialog);
 elements.deleteRecord.addEventListener("click", deleteActiveRecord);
 elements.showCountry.addEventListener("click", showCountryMap);
 elements.searchCity.addEventListener("click", handleCitySearch);
-elements.searchPlace.addEventListener("click", handlePlaceSearch);
 elements.form.city.addEventListener("input", handleCityInputChange);
-elements.form.placeName.addEventListener("input", handlePlaceInputChange);
+elements.addPlace.addEventListener("click", () => addPlaceRow());
+elements.placesList.addEventListener("input", handlePlacesListInput);
+elements.placesList.addEventListener("click", handlePlacesListClick);
 elements.exportRecords.addEventListener("click", exportRecords);
 elements.importRecords.addEventListener("click", importRecords);
 elements.importFile.addEventListener("change", handleImport);

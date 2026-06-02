@@ -122,15 +122,13 @@
         </div>
         <div class="place-results" id="city-results" aria-live="polite"></div>
 
-        <label>
-          具体地点
-          <input name="placeName" placeholder="例如：上海迪士尼乐园、杭州西湖断桥" />
-        </label>
-        <div class="place-search-actions">
-          <button class="ghost-button" id="search-place" type="button">搜索地点</button>
-          <span id="selected-place">未选择地图地点</span>
+        <div class="places-editor">
+          <div class="form-section-head">
+            <span>具体地点</span>
+            <button class="ghost-button" id="add-place" type="button">+ 添加地点</button>
+          </div>
+          <div class="places-list" id="places-list"></div>
         </div>
-        <div class="place-results" id="place-results" aria-live="polite"></div>
 
         <div class="form-row">
           <label>

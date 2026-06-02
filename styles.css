@@ -527,6 +527,33 @@ h2 {
   gap: 8px;
 }
 
+.places-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.form-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+}
+
+.places-list {
+  display: grid;
+  gap: 12px;
+}
+
+.place-row {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .place-result {
   display: grid;
   gap: 4px;
@@ -580,6 +607,7 @@ h2 {
   .timeline-head,
   .dialog-actions,
   .toolbar-actions,
+  .form-section-head,
   .place-search-actions,
   .form-row {
     align-items: stretch;
