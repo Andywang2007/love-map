@@ -93,6 +93,9 @@ const elements = {
   openForm: document.querySelector("#open-form"),
   editRecord: document.querySelector("#edit-record"),
   deleteRecord: document.querySelector("#delete-record"),
+  searchPlace: document.querySelector("#search-place"),
+  selectedPlace: document.querySelector("#selected-place"),
+  placeResults: document.querySelector("#place-results"),
   exportRecords: document.querySelector("#export-records"),
   importRecords: document.querySelector("#import-records"),
   importFile: document.querySelector("#import-file"),
@@ -112,6 +115,7 @@ const mapState = {
 let records = [];
 let activeId = null;
 let editingId = null;
+let selectedPlace = null;
 
 init();
 
@@ -367,7 +371,58 @@ function searchPlace(record) {
   });
 }
 
+function searchPlaceCandidates(city, keyword) {
+  if (!mapState.ready || !keyword.trim()) {
+    return Promise.reject(new Error("Map is not ready"));
+  }
+
+  return new Promise((resolve, reject) => {
+    const localSearch = new BMapGL.LocalSearch(city || undefined, {
+      onSearchComplete: (results) => {
+        const status = localSearch.getStatus();
+        const success = status === 0 || status === window.BMAP_STATUS_SUCCESS;
+
+        if (!success || !results || results.getCurrentNumPois() === 0) {
+          reject(new Error("Place not found"));
+          return;
+        }
+
+        const candidates = [];
+        const count = Math.min(results.getCurrentNumPois(), 6);
+
+        for (let index = 0; index < count; index += 1) {
+          const poi = results.getPoi(index);
+
+          if (!poi?.point) {
+            continue;
+          }
+
+          candidates.push({
+            title: poi.title || keyword,
+            address: poi.address || "",
+            city: city || "",
+            latitude: poi.point.lat,
+            longitude: poi.point.lng
+          });
+        }
+
+        candidates.length > 0 ? resolve(candidates) : reject(new Error("Place not found"));
+      }
+    });
+
+    localSearch.search(keyword.trim());
+  });
+}
+
 async function resolveRecordLocation(record) {
+  if (selectedPlace && selectedPlace.title === record.placeName) {
+    return {
+      latitude: selectedPlace.latitude,
+      longitude: selectedPlace.longitude,
+      placeName: selectedPlace.title
+    };
+  }
+
   try {
     return await searchPlace(record);
   } catch {
@@ -536,6 +591,7 @@ function selectRecord(id) {
 
 function openDialog(record = null) {
   elements.form.reset();
+  clearSelectedPlace();
   editingId = record?.id ?? null;
   document.querySelector("#dialog-title").textContent = editingId ? "编辑见面记录" : "新增见面记录";
   elements.form.querySelector('button[type="submit"]').textContent = editingId ? "保存修改" : "保存记录";
@@ -543,6 +599,16 @@ function openDialog(record = null) {
   if (record) {
     elements.form.city.value = record.city;
     elements.form.placeName.value = record.placeName || "";
+    if (hasPreciseCoordinates(record)) {
+      selectedPlace = {
+        title: record.placeName || record.city,
+        address: "",
+        city: record.city,
+        latitude: record.latitude,
+        longitude: record.longitude
+      };
+      elements.selectedPlace.textContent = `已选择：${selectedPlace.title}`;
+    }
     elements.form.startDate.value = record.startDate;
     elements.form.endDate.value = record.endDate || "";
     elements.form.stay.value = record.stay;
@@ -566,6 +632,62 @@ function openEditDialog() {
   }
 
   openDialog(record);
+}
+
+function clearSelectedPlace() {
+  selectedPlace = null;
+  elements.selectedPlace.textContent = "未选择地图地点";
+  elements.placeResults.innerHTML = "";
+}
+
+async function handlePlaceSearch() {
+  const city = elements.form.city.value.trim();
+  const keyword = elements.form.placeName.value.trim();
+
+  clearSelectedPlace();
+
+  if (!mapState.ready) {
+    elements.placeResults.textContent = "地图还没加载好，请稍后再试。";
+    return;
+  }
+
+  if (!keyword) {
+    elements.placeResults.textContent = "先输入一个具体地点，比如“北京南站”。";
+    return;
+  }
+
+  elements.placeResults.textContent = "正在搜索...";
+
+  try {
+    const candidates = await searchPlaceCandidates(city, keyword);
+    renderPlaceCandidates(candidates);
+  } catch {
+    elements.placeResults.textContent = "没有找到地点。可以换一个更完整的名称，比如“北京南站”。";
+  }
+}
+
+function renderPlaceCandidates(candidates) {
+  elements.placeResults.innerHTML = "";
+
+  candidates.forEach((candidate) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "place-result";
+    button.innerHTML = `<strong>${candidate.title}</strong><span>${candidate.address || "百度地图搜索结果"}</span>`;
+    button.addEventListener("click", () => {
+      selectedPlace = candidate;
+      elements.form.placeName.value = candidate.title;
+      elements.selectedPlace.textContent = `已选择：${candidate.title}`;
+      elements.placeResults.innerHTML = "";
+    });
+    elements.placeResults.append(button);
+  });
+}
+
+function handlePlaceInputChange() {
+  if (selectedPlace && elements.form.placeName.value.trim() !== selectedPlace.title) {
+    clearSelectedPlace();
+  }
 }
 
 function readPhotosAsDataUrls(files) {
@@ -628,6 +750,11 @@ async function handleSubmit(event) {
       note: formData.get("note").trim(),
       photos: originalRecord?.photos ?? []
     };
+    if (selectedPlace && selectedPlace.title === record.placeName) {
+      record.latitude = selectedPlace.latitude;
+      record.longitude = selectedPlace.longitude;
+      record.placeName = selectedPlace.title;
+    }
     const located = await resolveRecordLocation(record);
     record.latitude = located.latitude;
     record.longitude = located.longitude;
@@ -805,6 +932,9 @@ async function handleImport(event) {
 elements.openForm.addEventListener("click", () => openDialog());
 elements.editRecord.addEventListener("click", openEditDialog);
 elements.deleteRecord.addEventListener("click", deleteActiveRecord);
+elements.searchPlace.addEventListener("click", handlePlaceSearch);
+elements.form.city.addEventListener("input", clearSelectedPlace);
+elements.form.placeName.addEventListener("input", handlePlaceInputChange);
 elements.exportRecords.addEventListener("click", exportRecords);
 elements.importRecords.addEventListener("click", importRecords);
 elements.importFile.addEventListener("change", handleImport);

@@ -436,6 +436,45 @@ h2 {
   gap: 12px;
 }
 
+.place-search-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: -6px;
+}
+
+.place-search-actions span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.place-results {
+  display: grid;
+  gap: 8px;
+}
+
+.place-result {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.place-result strong,
+.place-result span {
+  display: block;
+}
+
+.place-result span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 @media (max-width: 860px) {
   .top-bar,
   .workspace {
@@ -467,6 +506,7 @@ h2 {
   .timeline-head,
   .dialog-actions,
   .toolbar-actions,
+  .place-search-actions,
   .form-row {
     align-items: stretch;
     flex-direction: column;
