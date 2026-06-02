@@ -92,6 +92,8 @@ const elements = {
   detailNote: document.querySelector("#detail-note"),
   syncStatus: document.querySelector("#sync-status"),
   openForm: document.querySelector("#open-form"),
+  editRecord: document.querySelector("#edit-record"),
+  deleteRecord: document.querySelector("#delete-record"),
   exportRecords: document.querySelector("#export-records"),
   importRecords: document.querySelector("#import-records"),
   importFile: document.querySelector("#import-file"),
@@ -104,6 +106,7 @@ const elements = {
 
 let records = [];
 let activeId = null;
+let editingId = null;
 let globe = null;
 
 init();
@@ -547,6 +550,8 @@ function renderTimeline(ordered) {
 
 function renderDetail(record) {
   if (!record) {
+    elements.editRecord.disabled = true;
+    elements.deleteRecord.disabled = true;
     elements.detailCity.textContent = "还没有记录";
     elements.detailTime.textContent = "-";
     elements.detailPlace.textContent = "-";
@@ -557,6 +562,8 @@ function renderDetail(record) {
     return;
   }
 
+  elements.editRecord.disabled = false;
+  elements.deleteRecord.disabled = false;
   activeId = record.id;
   elements.detailCity.textContent = record.city;
   elements.detailTime.textContent = formatDateRange(record);
@@ -590,13 +597,40 @@ function selectRecord(id) {
   render();
 }
 
-function openDialog() {
+function openDialog(record = null) {
   elements.form.reset();
+  editingId = record?.id ?? null;
+  document.querySelector("#dialog-title").textContent = editingId ? "编辑见面记录" : "新增见面记录";
+  elements.form.querySelector('button[type="submit"]').textContent = editingId ? "保存修改" : "保存记录";
+
+  if (record) {
+    elements.form.city.value = record.city;
+    elements.form.placeName.value = record.placeName || "";
+    elements.form.latitude.value = Number.isFinite(record.latitude) ? record.latitude : "";
+    elements.form.longitude.value = Number.isFinite(record.longitude) ? record.longitude : "";
+    elements.form.startDate.value = record.startDate;
+    elements.form.endDate.value = record.endDate || "";
+    elements.form.stay.value = record.stay;
+    elements.form.scene.value = record.scene;
+    elements.form.note.value = record.note;
+  }
+
   elements.dialog.showModal();
 }
 
 function closeDialog() {
+  editingId = null;
   elements.dialog.close();
+}
+
+function openEditDialog() {
+  const record = records.find((item) => item.id === activeId);
+
+  if (!record) {
+    return;
+  }
+
+  openDialog(record);
 }
 
 function fillCityCoordinates() {
@@ -658,8 +692,10 @@ async function handleSubmit(event) {
     const formData = new FormData(elements.form);
     const latitude = Number.parseFloat(formData.get("latitude"));
     const longitude = Number.parseFloat(formData.get("longitude"));
+    const originalRecord = records.find((item) => item.id === editingId);
+    const recordId = editingId || `record-${Date.now()}`;
     const record = {
-      id: `record-${Date.now()}`,
+      id: recordId,
       city: formData.get("city").trim(),
       placeName: formData.get("placeName").trim(),
       latitude: Number.isFinite(latitude) ? latitude : null,
@@ -669,12 +705,18 @@ async function handleSubmit(event) {
       stay: formData.get("stay").trim(),
       scene: formData.get("scene").trim(),
       note: formData.get("note").trim(),
-      photos: []
+      photos: originalRecord?.photos ?? []
     };
 
     if (cloudEnabled) {
-      record.photos = await uploadPhotos(record.id, elements.form.photos.files);
-      const { error } = await cloud.from(tableName).insert(toCloudRecord(record));
+      record.photos = [
+        ...record.photos,
+        ...(await uploadPhotos(record.id, elements.form.photos.files))
+      ];
+      const request = editingId
+        ? cloud.from(tableName).update(toCloudRecord(record)).eq("id", record.id)
+        : cloud.from(tableName).insert(toCloudRecord(record));
+      const { error } = await request;
 
       if (error) {
         throw error;
@@ -684,8 +726,13 @@ async function handleSubmit(event) {
       closeDialog();
       await loadCloudRecords();
     } else {
-      record.photos = await readPhotosAsDataUrls(elements.form.photos.files);
-      records = [...records, record];
+      record.photos = [
+        ...record.photos,
+        ...(await readPhotosAsDataUrls(elements.form.photos.files))
+      ];
+      records = editingId
+        ? records.map((item) => (item.id === record.id ? record : item))
+        : [...records, record];
       activeId = record.id;
       saveLocalRecords();
       closeDialog();
@@ -715,6 +762,37 @@ async function resetDemoRecords() {
     return;
   }
 
+  saveLocalRecords();
+  render();
+}
+
+async function deleteActiveRecord() {
+  const record = records.find((item) => item.id === activeId);
+
+  if (!record) {
+    return;
+  }
+
+  const confirmed = confirm(`确定删除「${record.placeName || record.city}」这条记录吗？`);
+
+  if (!confirmed) {
+    return;
+  }
+
+  if (cloudEnabled) {
+    const { error } = await cloud.from(tableName).delete().eq("id", record.id);
+
+    if (error) {
+      alert("删除失败，请确认 Supabase 已经添加 delete 权限。");
+      return;
+    }
+
+    await loadCloudRecords();
+    return;
+  }
+
+  records = records.filter((item) => item.id !== record.id);
+  activeId = records[0]?.id ?? null;
   saveLocalRecords();
   render();
 }
@@ -797,6 +875,8 @@ async function handleImport(event) {
 }
 
 elements.openForm.addEventListener("click", openDialog);
+elements.editRecord.addEventListener("click", openEditDialog);
+elements.deleteRecord.addEventListener("click", deleteActiveRecord);
 elements.exportRecords.addEventListener("click", exportRecords);
 elements.importRecords.addEventListener("click", importRecords);
 elements.importFile.addEventListener("change", handleImport);

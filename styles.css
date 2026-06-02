@@ -143,6 +143,12 @@ h2 {
   gap: 14px;
 }
 
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 .toolbar-actions {
   display: flex;
   flex-wrap: wrap;
@@ -163,6 +169,7 @@ h2 {
 
 .primary-button,
 .ghost-button,
+.danger-button,
 .icon-button {
   border: 0;
   border-radius: 8px;
@@ -186,6 +193,7 @@ h2 {
 
 .primary-button:hover,
 .ghost-button:hover,
+.danger-button:hover,
 .icon-button:hover {
   transform: translateY(-1px);
 }
@@ -201,6 +209,13 @@ h2 {
   padding: 0 12px;
   color: var(--ink);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.danger-button {
+  min-height: 36px;
+  padding: 0 12px;
+  color: #ffd7d7;
+  background: rgba(214, 106, 122, 0.18);
 }
 
 .icon-button {

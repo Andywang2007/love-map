@@ -36,6 +36,11 @@ on public.meeting_records for update
 using (true)
 with check (true);
 
+drop policy if exists "Public can delete meeting records" on public.meeting_records;
+create policy "Public can delete meeting records"
+on public.meeting_records for delete
+using (true);
+
 insert into storage.buckets (id, name, public)
 values ('meeting-photos', 'meeting-photos', true)
 on conflict (id) do update set public = true;
