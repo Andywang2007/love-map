@@ -135,6 +135,15 @@ const elements = {
   form: document.querySelector("#record-form")
 };
 
+const formFields = {
+  city: document.querySelector('[name="city"]'),
+  startDate: document.querySelector('[name="startDate"]'),
+  endDate: document.querySelector('[name="endDate"]'),
+  stay: document.querySelector('[name="stay"]'),
+  note: document.querySelector('[name="note"]'),
+  photos: document.querySelector('[name="photos"]')
+};
+
 const mapState = {
   map: null,
   ready: false,
@@ -481,7 +490,7 @@ function searchPlaceCandidates(city, keyword) {
 }
 
 function getSearchCity() {
-  return selectedCity?.title || elements.form.city.value.trim();
+  return selectedCity?.title || formFields.city.value.trim();
 }
 
 async function resolvePlaceLocation(city, place) {
@@ -660,9 +669,9 @@ function createDailyEventRow(event = {}) {
 
   dateInput.className = "daily-event-date";
   dateInput.type = "date";
-  dateInput.min = elements.form.startDate?.value || "";
-  dateInput.max = elements.form.endDate?.value || "";
-  dateInput.value = event.date || elements.form.startDate?.value || "";
+  dateInput.min = formFields.startDate.value || "";
+  dateInput.max = formFields.endDate.value || "";
+  dateInput.value = event.date || formFields.startDate.value || "";
 
   textInput.className = "daily-event-text";
   textInput.rows = 2;
@@ -688,7 +697,7 @@ function renderDailyEventRows(events = []) {
 }
 
 function readDailyEventRows() {
-  const fallbackDate = elements.form.startDate.value;
+  const fallbackDate = formFields.startDate.value;
 
   return [...elements.dailyEventsList.querySelectorAll(".daily-event-row")]
     .map((row) => ({
@@ -699,8 +708,8 @@ function readDailyEventRows() {
 }
 
 function syncDailyEventDateBounds() {
-  const startDate = elements.form.startDate.value;
-  const endDate = elements.form.endDate.value;
+  const startDate = formFields.startDate.value;
+  const endDate = formFields.endDate.value;
 
   elements.dailyEventsList.querySelectorAll(".daily-event-date").forEach((input) => {
     input.min = startDate;
@@ -1078,7 +1087,7 @@ function openDialog(record = null) {
   elements.form.querySelector('button[type="submit"]').textContent = editingId ? "保存修改" : "保存记录";
 
   if (record) {
-    elements.form.city.value = record.city;
+    formFields.city.value = record.city;
     if (hasPreciseCoordinates(record)) {
       selectedCity = {
         title: record.city,
@@ -1089,9 +1098,9 @@ function openDialog(record = null) {
       elements.selectedCity.textContent = `已选择：${selectedCity.title}`;
     }
     renderPlaceRows(getRecordPlaces(record));
-    elements.form.startDate.value = record.startDate;
-    elements.form.endDate.value = record.endDate || "";
-    elements.form.stay.value = record.stay;
+    formFields.startDate.value = record.startDate;
+    formFields.endDate.value = record.endDate || "";
+    formFields.stay.value = record.stay;
     if (hasStayCoordinates(record)) {
       selectedStay = {
         title: record.stay,
@@ -1100,7 +1109,7 @@ function openDialog(record = null) {
       };
       elements.selectedStay.textContent = `已选择：${record.stay}`;
     }
-    elements.form.note.value = record.note;
+    formFields.note.value = record.note;
     renderDailyEventRows(record.dailyEvents ?? []);
   }
 
@@ -1135,7 +1144,7 @@ function clearSelectedStay() {
 }
 
 async function handleCitySearch() {
-  const keyword = elements.form.city.value.trim();
+  const keyword = formFields.city.value.trim();
 
   clearSelectedCity();
   clearSelectedStay();
@@ -1223,7 +1232,7 @@ function renderCityCandidates(candidates) {
     button.innerHTML = `<strong>${candidate.title}</strong><span>${candidate.address || "百度地图搜索结果"}</span>`;
     button.addEventListener("click", () => {
       selectedCity = candidate;
-      elements.form.city.value = candidate.title;
+      formFields.city.value = candidate.title;
       elements.selectedCity.textContent = `已选择：${candidate.title}`;
       elements.cityResults.innerHTML = "";
       clearSelectedStay();
@@ -1234,7 +1243,7 @@ function renderCityCandidates(candidates) {
 }
 
 function handleCityInputChange() {
-  if (selectedCity && elements.form.city.value.trim() !== selectedCity.title) {
+  if (selectedCity && formFields.city.value.trim() !== selectedCity.title) {
     clearSelectedCity();
     clearSelectedStay();
     clearPlaceSelections();
@@ -1243,7 +1252,7 @@ function handleCityInputChange() {
 
 async function handleStaySearch() {
   const city = getSearchCity();
-  const keyword = elements.form.stay.value.trim();
+  const keyword = formFields.stay.value.trim();
 
   clearSelectedStay();
 
@@ -1277,7 +1286,7 @@ function renderStayCandidates(candidates) {
     button.innerHTML = `<strong>${candidate.title}</strong><span>${candidate.address || "百度地图搜索结果"}</span>`;
     button.addEventListener("click", () => {
       selectedStay = candidate;
-      elements.form.stay.value = candidate.title;
+      formFields.stay.value = candidate.title;
       elements.selectedStay.textContent = `已选择：${candidate.title}`;
       elements.stayResults.innerHTML = "";
     });
@@ -1286,7 +1295,7 @@ function renderStayCandidates(candidates) {
 }
 
 function handleStayInputChange() {
-  if (selectedStay && elements.form.stay.value.trim() !== selectedStay.title) {
+  if (selectedStay && formFields.stay.value.trim() !== selectedStay.title) {
     clearSelectedStay();
   }
 }
@@ -1409,7 +1418,7 @@ async function handleSubmit(event) {
       try {
         record.photos = [
           ...record.photos,
-          ...(await uploadPhotos(record.id, elements.form.photos.files))
+          ...(await uploadPhotos(record.id, formFields.photos.files))
         ];
       } catch {
         throw new Error("照片上传失败，请稍后再试，或先不选照片保存。");
@@ -1431,7 +1440,7 @@ async function handleSubmit(event) {
     } else {
       record.photos = [
         ...record.photos,
-        ...(await readPhotosAsDataUrls(elements.form.photos.files))
+        ...(await readPhotosAsDataUrls(formFields.photos.files))
       ];
       records = editingId
         ? records.map((item) => (item.id === record.id ? record : item))
@@ -1612,10 +1621,10 @@ elements.deleteRecord.addEventListener("click", deleteActiveRecord);
 elements.showCountry.addEventListener("click", showCountryMap);
 elements.searchCity.addEventListener("click", handleCitySearch);
 elements.searchStay.addEventListener("click", handleStaySearch);
-elements.form.city.addEventListener("input", handleCityInputChange);
-elements.form.stay.addEventListener("input", handleStayInputChange);
-elements.form.startDate.addEventListener("change", syncDailyEventDateBounds);
-elements.form.endDate.addEventListener("change", syncDailyEventDateBounds);
+formFields.city.addEventListener("input", handleCityInputChange);
+formFields.stay.addEventListener("input", handleStayInputChange);
+formFields.startDate.addEventListener("change", syncDailyEventDateBounds);
+formFields.endDate.addEventListener("change", syncDailyEventDateBounds);
 elements.addPlace.addEventListener("click", () => addPlaceRow());
 elements.placesList.addEventListener("input", handlePlacesListInput);
 elements.placesList.addEventListener("click", handlePlacesListClick);
