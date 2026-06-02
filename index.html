@@ -76,10 +76,6 @@
               <span>住处</span>
               <strong id="detail-stay">-</strong>
             </div>
-            <div>
-              <span>场景</span>
-              <strong id="detail-scene">-</strong>
-            </div>
           </div>
 
           <p class="memory-note" id="detail-note">点开地图上的一个点，查看这次见面的具体记录。</p>
@@ -145,11 +141,11 @@
           住哪里
           <input name="stay" required placeholder="例如：外滩附近的小酒店" />
         </label>
-
-        <label>
-          见面场景
-          <input name="scene" required placeholder="例如：车站重逢、生日、一起看海" />
-        </label>
+        <div class="place-search-actions">
+          <button class="ghost-button" id="search-stay" type="button">搜索住处</button>
+          <span id="selected-stay">未选择地图住处</span>
+        </div>
+        <div class="place-results" id="stay-results" aria-live="polite"></div>
 
         <label>
           具体内容

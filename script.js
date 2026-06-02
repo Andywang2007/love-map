@@ -28,6 +28,8 @@ const demoRecords = [
     startDate: "2025-10-02",
     endDate: "2025-10-05",
     stay: "外滩附近的小酒店",
+    stayLatitude: 31.239,
+    stayLongitude: 121.484,
     scene: "第一次国庆见面",
     note: "晚上一起沿着外滩慢慢走，江风很舒服。那天人很多，但还是觉得整个城市都像只剩下我们两个人。",
     dailyEvents: [
@@ -49,6 +51,8 @@ const demoRecords = [
     startDate: "2026-01-18",
     endDate: "2026-01-20",
     stay: "西湖边的民宿",
+    stayLatitude: 30.258,
+    stayLongitude: 120.153,
     scene: "冬天一起看湖",
     note: "早上买了热豆浆和小笼包，坐在湖边等太阳出来。没有安排很多行程，只是一起散步也很开心。",
     dailyEvents: [
@@ -70,6 +74,8 @@ const demoRecords = [
     startDate: "2026-04-04",
     endDate: "2026-04-06",
     stay: "珠江新城附近",
+    stayLatitude: 23.1199,
+    stayLongitude: 113.3236,
     scene: "清明小长假",
     note: "一起吃了早茶，点了太多东西，最后两个人撑到说不出话。晚上坐地铁回去的时候，她靠着我睡着了。",
     dailyEvents: [
@@ -102,7 +108,6 @@ const elements = {
   detailTime: document.querySelector("#detail-time"),
   detailPlace: document.querySelector("#detail-place"),
   detailStay: document.querySelector("#detail-stay"),
-  detailScene: document.querySelector("#detail-scene"),
   detailNote: document.querySelector("#detail-note"),
   dailyEvents: document.querySelector("#daily-events"),
   syncStatus: document.querySelector("#sync-status"),
@@ -112,6 +117,9 @@ const elements = {
   searchCity: document.querySelector("#search-city"),
   selectedCity: document.querySelector("#selected-city"),
   cityResults: document.querySelector("#city-results"),
+  searchStay: document.querySelector("#search-stay"),
+  selectedStay: document.querySelector("#selected-stay"),
+  stayResults: document.querySelector("#stay-results"),
   placesList: document.querySelector("#places-list"),
   addPlace: document.querySelector("#add-place"),
   showCountry: document.querySelector("#show-country"),
@@ -136,6 +144,7 @@ let activeId = null;
 let activeCity = null;
 let editingId = null;
 let selectedCity = null;
+let selectedStay = null;
 
 init();
 
@@ -259,7 +268,9 @@ function fromCloudRecord(record) {
     startDate: record.start_date,
     endDate: record.end_date ?? "",
     stay: record.stay,
-    scene: record.scene,
+    stayLatitude: record.stay_latitude ?? null,
+    stayLongitude: record.stay_longitude ?? null,
+    scene: record.scene ?? "",
     note: record.note,
     dailyEvents: record.daily_events ?? [],
     photos: record.photos ?? []
@@ -280,7 +291,9 @@ function toCloudRecord(record) {
     start_date: record.startDate,
     end_date: record.endDate || null,
     stay: record.stay,
-    scene: record.scene,
+    stay_latitude: Number.isFinite(record.stayLatitude) ? record.stayLatitude : null,
+    stay_longitude: Number.isFinite(record.stayLongitude) ? record.stayLongitude : null,
+    scene: record.scene || "",
     note: record.note,
     daily_events: record.dailyEvents ?? [],
     photos: record.photos
@@ -365,6 +378,14 @@ function getCoordinates(record) {
   return cityPositions[record.city] ?? null;
 }
 
+function hasStayCoordinates(record) {
+  return Number.isFinite(record.stayLatitude) && Number.isFinite(record.stayLongitude);
+}
+
+function getStayCoordinates(record) {
+  return hasStayCoordinates(record) ? { lat: record.stayLatitude, lng: record.stayLongitude } : null;
+}
+
 async function ensureRecordLocations(shouldPersist) {
   if (!mapState.ready) {
     return;
@@ -378,7 +399,9 @@ async function ensureRecordLocations(shouldPersist) {
       currentPlaces.length > 0 &&
       currentPlaces.every((place) => Number.isFinite(place.latitude) && Number.isFinite(place.longitude));
 
-    if (hasPreciseCoordinates(record) && allPlacesLocated) {
+    const stayLocated = !record.stay || hasStayCoordinates(record);
+
+    if (hasPreciseCoordinates(record) && allPlacesLocated && stayLocated) {
       continue;
     }
 
@@ -388,6 +411,12 @@ async function ensureRecordLocations(shouldPersist) {
       record.placeName = primaryPlace?.name || record.placeName;
       record.latitude = primaryPlace?.latitude ?? record.latitude;
       record.longitude = primaryPlace?.longitude ?? record.longitude;
+
+      if (record.stay && !hasStayCoordinates(record)) {
+        const stayLocation = await resolveStayLocation(record);
+        record.stayLatitude = stayLocation.latitude;
+        record.stayLongitude = stayLocation.longitude;
+      }
 
       updates.push(record);
     } catch {
@@ -485,6 +514,29 @@ async function resolvePlaceLocation(city, place) {
   }
 
   throw new Error("Location not found");
+}
+
+async function resolveStayLocation(record) {
+  if (selectedStay && selectedStay.title === record.stay) {
+    return {
+      latitude: selectedStay.latitude,
+      longitude: selectedStay.longitude
+    };
+  }
+
+  if (hasStayCoordinates(record)) {
+    return {
+      latitude: record.stayLatitude,
+      longitude: record.stayLongitude
+    };
+  }
+
+  const [candidate] = await searchPlaceCandidates(record.city || getSearchCity(), record.stay);
+
+  return {
+    latitude: candidate.latitude,
+    longitude: candidate.longitude
+  };
 }
 
 async function resolveRecordPlaces(record) {
@@ -602,7 +654,7 @@ function addMapMarker(point, labelText, type, onClick) {
   const label = new BMapGL.Label(labelText, { offset });
 
   label.setStyle({
-    border: "1px solid rgba(224, 191, 115, 0.35)",
+    border: type === "stay" ? "1px solid rgba(120, 184, 255, 0.42)" : "1px solid rgba(224, 191, 115, 0.35)",
     borderRadius: "999px",
     color: "#f8ead1",
     backgroundColor: "rgba(12, 18, 28, 0.84)",
@@ -670,6 +722,15 @@ function renderMarkers(groups) {
 
 function renderPlaceMarkers(cityRecords) {
   cityRecords.forEach((record) => {
+    const stayCoordinates = getStayCoordinates(record);
+
+    if (stayCoordinates) {
+      const stayPoint = new BMapGL.Point(stayCoordinates.lng, stayCoordinates.lat);
+      addMapMarker(stayPoint, `住处：${record.stay}`, "stay", () => {
+        selectRecord(record.id, stayCoordinates);
+      });
+    }
+
     const places = getRecordPlaces(record);
 
     if (places.length === 0) {
@@ -680,7 +741,7 @@ function renderPlaceMarkers(cityRecords) {
       }
 
       const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
-      addMapMarker(point, record.scene, "place", () => selectRecord(record.id));
+      addMapMarker(point, formatDateRange(record), "place", () => selectRecord(record.id));
       return;
     }
 
@@ -690,7 +751,7 @@ function renderPlaceMarkers(cityRecords) {
       }
 
       const point = new BMapGL.Point(place.longitude, place.latitude);
-      addMapMarker(point, place.name, "place", () => selectRecord(record.id));
+      addMapMarker(point, place.name, "place", () => selectRecord(record.id, { lat: place.latitude, lng: place.longitude }));
     });
   });
 }
@@ -708,6 +769,15 @@ function focusMapOnRecord(record, shouldZoom = true) {
   const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
   const targetZoom = shouldZoom ? Math.max(mapState.map.getZoom(), 15) : mapState.map.getZoom();
   mapState.map.centerAndZoom(point, targetZoom);
+}
+
+function focusMapOnCoordinates(coordinates, zoom = 15) {
+  if (!mapState.ready || !coordinates) {
+    return;
+  }
+
+  const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
+  mapState.map.centerAndZoom(point, Math.max(mapState.map.getZoom(), zoom));
 }
 
 function focusMapOnCity(city, shouldZoom = true) {
@@ -747,7 +817,7 @@ function renderTimeline(ordered) {
     const button = document.createElement("button");
     button.className = record.id === activeId ? "active" : "";
     button.type = "button";
-    button.innerHTML = `<strong>${record.scene}</strong><span>${formatPlace(record)} · ${formatDateRange(record)}</span>`;
+    button.innerHTML = `<strong>${formatDateRange(record)}</strong><span>${formatPlace(record)}</span>`;
     button.addEventListener("click", () => selectRecord(record.id));
     item.append(button);
     elements.timeline.append(item);
@@ -762,7 +832,6 @@ function renderDetail(record) {
     elements.detailTime.textContent = "-";
     elements.detailPlace.textContent = "-";
     elements.detailStay.textContent = "-";
-    elements.detailScene.textContent = "-";
     elements.detailNote.textContent = "点击“新增记录”，把你们下一次见面写进地图。";
     elements.dailyEvents.innerHTML = "";
     elements.photoGrid.innerHTML = "";
@@ -776,7 +845,6 @@ function renderDetail(record) {
   elements.detailTime.textContent = formatDateRange(record);
   elements.detailPlace.textContent = formatPlace(record);
   elements.detailStay.textContent = record.stay;
-  elements.detailScene.textContent = record.scene;
   elements.detailNote.textContent = record.note;
   renderDailyEvents(record);
   elements.photoGrid.innerHTML = "";
@@ -824,10 +892,15 @@ function renderDailyEvents(record) {
   });
 }
 
-function selectRecord(id) {
+function selectRecord(id, focusCoordinates = null) {
   activeId = id;
   activeCity = records.find((record) => record.id === id)?.city ?? activeCity;
   render();
+  if (focusCoordinates) {
+    focusMapOnCoordinates(focusCoordinates);
+    return;
+  }
+
   focusMapOnRecord(records.find((record) => record.id === id));
 }
 
@@ -910,6 +983,7 @@ function clearPlaceSelections() {
 function openDialog(record = null) {
   elements.form.reset();
   clearSelectedCity();
+  clearSelectedStay();
   renderPlaceRows();
   editingId = record?.id ?? null;
   document.querySelector("#dialog-title").textContent = editingId ? "编辑见面记录" : "新增见面记录";
@@ -930,7 +1004,14 @@ function openDialog(record = null) {
     elements.form.startDate.value = record.startDate;
     elements.form.endDate.value = record.endDate || "";
     elements.form.stay.value = record.stay;
-    elements.form.scene.value = record.scene;
+    if (hasStayCoordinates(record)) {
+      selectedStay = {
+        title: record.stay,
+        latitude: record.stayLatitude,
+        longitude: record.stayLongitude
+      };
+      elements.selectedStay.textContent = `已选择：${record.stay}`;
+    }
     elements.form.note.value = record.note;
     elements.form.dailyEvents.value = stringifyDailyEvents(record.dailyEvents ?? []);
   }
@@ -959,10 +1040,17 @@ function clearSelectedCity() {
   elements.cityResults.innerHTML = "";
 }
 
+function clearSelectedStay() {
+  selectedStay = null;
+  elements.selectedStay.textContent = "未选择地图住处";
+  elements.stayResults.innerHTML = "";
+}
+
 async function handleCitySearch() {
   const keyword = elements.form.city.value.trim();
 
   clearSelectedCity();
+  clearSelectedStay();
   clearPlaceSelections();
 
   if (!mapState.ready) {
@@ -1050,6 +1138,7 @@ function renderCityCandidates(candidates) {
       elements.form.city.value = candidate.title;
       elements.selectedCity.textContent = `已选择：${candidate.title}`;
       elements.cityResults.innerHTML = "";
+      clearSelectedStay();
       clearPlaceSelections();
     });
     elements.cityResults.append(button);
@@ -1059,7 +1148,58 @@ function renderCityCandidates(candidates) {
 function handleCityInputChange() {
   if (selectedCity && elements.form.city.value.trim() !== selectedCity.title) {
     clearSelectedCity();
+    clearSelectedStay();
     clearPlaceSelections();
+  }
+}
+
+async function handleStaySearch() {
+  const city = getSearchCity();
+  const keyword = elements.form.stay.value.trim();
+
+  clearSelectedStay();
+
+  if (!mapState.ready) {
+    elements.stayResults.textContent = "地图还没加载好，请稍后再试。";
+    return;
+  }
+
+  if (!keyword) {
+    elements.stayResults.textContent = "先输入住处，比如“北京三里屯酒店”。";
+    return;
+  }
+
+  elements.stayResults.textContent = "正在搜索...";
+
+  try {
+    const candidates = await searchPlaceCandidates(city, keyword);
+    renderStayCandidates(candidates);
+  } catch {
+    elements.stayResults.textContent = "没有找到住处。可以换一个更完整的名称，比如“北京三里屯酒店”。";
+  }
+}
+
+function renderStayCandidates(candidates) {
+  elements.stayResults.innerHTML = "";
+
+  candidates.forEach((candidate) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "place-result";
+    button.innerHTML = `<strong>${candidate.title}</strong><span>${candidate.address || "百度地图搜索结果"}</span>`;
+    button.addEventListener("click", () => {
+      selectedStay = candidate;
+      elements.form.stay.value = candidate.title;
+      elements.selectedStay.textContent = `已选择：${candidate.title}`;
+      elements.stayResults.innerHTML = "";
+    });
+    elements.stayResults.append(button);
+  });
+}
+
+function handleStayInputChange() {
+  if (selectedStay && elements.form.stay.value.trim() !== selectedStay.title) {
+    clearSelectedStay();
   }
 }
 
@@ -1143,6 +1283,8 @@ async function handleSubmit(event) {
     const recordId = editingId || `record-${Date.now()}`;
     const places = readPlaceRows();
     const primaryPlace = places[0];
+    const stay = formData.get("stay").trim();
+    const canReuseStayCoordinates = originalRecord?.stay === stay;
     const record = {
       id: recordId,
       city: selectedCity?.title || formData.get("city").trim(),
@@ -1152,8 +1294,10 @@ async function handleSubmit(event) {
       places,
       startDate: formData.get("startDate"),
       endDate: formData.get("endDate"),
-      stay: formData.get("stay").trim(),
-      scene: formData.get("scene").trim(),
+      stay,
+      stayLatitude: selectedStay?.latitude ?? (canReuseStayCoordinates ? originalRecord?.stayLatitude : null) ?? null,
+      stayLongitude: selectedStay?.longitude ?? (canReuseStayCoordinates ? originalRecord?.stayLongitude : null) ?? null,
+      scene: originalRecord?.scene || "",
       note: formData.get("note").trim(),
       dailyEvents: parseDailyEvents(formData.get("dailyEvents") || ""),
       photos: originalRecord?.photos ?? []
@@ -1161,8 +1305,11 @@ async function handleSubmit(event) {
 
     try {
       record.places = await resolveRecordPlaces(record);
+      const stayLocation = await resolveStayLocation(record);
+      record.stayLatitude = stayLocation.latitude;
+      record.stayLongitude = stayLocation.longitude;
     } catch {
-      throw new Error("没有定位到这个城市或地点，请换一个更完整的城市/地点名称。");
+      throw new Error("没有定位到这个城市、地点或住处，请换一个更完整的名称。");
     }
 
     const located = record.places[0];
@@ -1226,9 +1373,11 @@ function formatCloudError(error) {
     message.includes("longitude") ||
     message.includes("place_name") ||
     message.includes("places") ||
+    message.includes("stay_latitude") ||
+    message.includes("stay_longitude") ||
     message.includes("daily_events")
   ) {
-    return "云端数据库还没升级：请在 Supabase SQL Editor 运行新增地点字段的 SQL。";
+    return "云端数据库还没升级：请在 Supabase SQL Editor 运行新增字段的 SQL。";
   }
 
   return `云端保存失败：${message || "请检查 Supabase 表字段和权限"}`;
@@ -1322,7 +1471,9 @@ function isValidRecord(record) {
     (typeof record.longitude === "number" || record.longitude === null || record.longitude === undefined) &&
     typeof record.startDate === "string" &&
     typeof record.stay === "string" &&
-    typeof record.scene === "string" &&
+    (typeof record.stayLatitude === "number" || record.stayLatitude === null || record.stayLatitude === undefined) &&
+    (typeof record.stayLongitude === "number" || record.stayLongitude === null || record.stayLongitude === undefined) &&
+    (typeof record.scene === "string" || record.scene === undefined) &&
     typeof record.note === "string" &&
     (Array.isArray(record.dailyEvents) || record.dailyEvents === undefined) &&
     Array.isArray(record.photos)
@@ -1372,7 +1523,9 @@ elements.editRecord.addEventListener("click", openEditDialog);
 elements.deleteRecord.addEventListener("click", deleteActiveRecord);
 elements.showCountry.addEventListener("click", showCountryMap);
 elements.searchCity.addEventListener("click", handleCitySearch);
+elements.searchStay.addEventListener("click", handleStaySearch);
 elements.form.city.addEventListener("input", handleCityInputChange);
+elements.form.stay.addEventListener("input", handleStayInputChange);
 elements.addPlace.addEventListener("click", () => addPlaceRow());
 elements.placesList.addEventListener("input", handlePlacesListInput);
 elements.placesList.addEventListener("click", handlePlacesListClick);
