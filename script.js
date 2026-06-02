@@ -367,6 +367,30 @@ function searchPlace(record) {
   });
 }
 
+async function resolveRecordLocation(record) {
+  try {
+    return await searchPlace(record);
+  } catch {
+    const cityOnlyRecord = { ...record, placeName: "" };
+
+    try {
+      return await searchPlace(cityOnlyRecord);
+    } catch {
+      const fallback = cityPositions[record.city];
+
+      if (fallback) {
+        return {
+          latitude: fallback.lat,
+          longitude: fallback.lng,
+          placeName: record.city
+        };
+      }
+
+      throw new Error("Location not found");
+    }
+  }
+}
+
 function sortedRecords() {
   return [...records].sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
 }
@@ -604,7 +628,7 @@ async function handleSubmit(event) {
       note: formData.get("note").trim(),
       photos: originalRecord?.photos ?? []
     };
-    const located = await searchPlace(record);
+    const located = await resolveRecordLocation(record);
     record.latitude = located.latitude;
     record.longitude = located.longitude;
     record.placeName = record.placeName || located.placeName;
@@ -642,7 +666,7 @@ async function handleSubmit(event) {
 
     focusMapOnRecord(record);
   } catch {
-    alert("保存失败：没有搜索到这个地点，或地图/云端配置还没准备好。");
+    alert("保存失败：请填写真实城市，具体地点可以留空或填写可搜索到的地点。");
   } finally {
     submitButton.disabled = false;
     submitButton.textContent = editingId ? "保存修改" : "保存记录";
