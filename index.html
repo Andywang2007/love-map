@@ -110,6 +110,11 @@
           城市
           <input name="city" required placeholder="例如：上海" />
         </label>
+        <div class="place-search-actions">
+          <button class="ghost-button" id="search-city" type="button">搜索城市</button>
+          <span id="selected-city">未选择地图城市</span>
+        </div>
+        <div class="place-results" id="city-results" aria-live="polite"></div>
 
         <label>
           具体地点

@@ -93,6 +93,9 @@ const elements = {
   openForm: document.querySelector("#open-form"),
   editRecord: document.querySelector("#edit-record"),
   deleteRecord: document.querySelector("#delete-record"),
+  searchCity: document.querySelector("#search-city"),
+  selectedCity: document.querySelector("#selected-city"),
+  cityResults: document.querySelector("#city-results"),
   searchPlace: document.querySelector("#search-place"),
   selectedPlace: document.querySelector("#selected-place"),
   placeResults: document.querySelector("#place-results"),
@@ -115,6 +118,7 @@ const mapState = {
 let records = [];
 let activeId = null;
 let editingId = null;
+let selectedCity = null;
 let selectedPlace = null;
 
 init();
@@ -345,10 +349,10 @@ function searchPlace(record) {
   }
 
   const keyword = record.placeName || record.city;
-  const city = record.city || undefined;
+  const location = record.city || mapState.map;
 
   return new Promise((resolve, reject) => {
-    const localSearch = new BMapGL.LocalSearch(city, {
+    const localSearch = new BMapGL.LocalSearch(location, {
       onSearchComplete: (results) => {
         const status = localSearch.getStatus();
         const success = status === 0 || status === window.BMAP_STATUS_SUCCESS;
@@ -377,7 +381,7 @@ function searchPlaceCandidates(city, keyword) {
   }
 
   return new Promise((resolve, reject) => {
-    const localSearch = new BMapGL.LocalSearch(city || undefined, {
+    const localSearch = new BMapGL.LocalSearch(city || mapState.map, {
       onSearchComplete: (results) => {
         const status = localSearch.getStatus();
         const success = status === 0 || status === window.BMAP_STATUS_SUCCESS;
@@ -414,6 +418,10 @@ function searchPlaceCandidates(city, keyword) {
   });
 }
 
+function getSearchCity() {
+  return selectedCity?.title || elements.form.city.value.trim();
+}
+
 async function resolveRecordLocation(record) {
   if (selectedPlace && selectedPlace.title === record.placeName) {
     return {
@@ -426,6 +434,14 @@ async function resolveRecordLocation(record) {
   try {
     return await searchPlace(record);
   } catch {
+    if (selectedCity && selectedCity.title === record.city) {
+      return {
+        latitude: selectedCity.latitude,
+        longitude: selectedCity.longitude,
+        placeName: record.city
+      };
+    }
+
     const cityOnlyRecord = { ...record, placeName: "" };
 
     try {
@@ -591,6 +607,7 @@ function selectRecord(id) {
 
 function openDialog(record = null) {
   elements.form.reset();
+  clearSelectedCity();
   clearSelectedPlace();
   editingId = record?.id ?? null;
   document.querySelector("#dialog-title").textContent = editingId ? "编辑见面记录" : "新增见面记录";
@@ -598,6 +615,15 @@ function openDialog(record = null) {
 
   if (record) {
     elements.form.city.value = record.city;
+    if (hasPreciseCoordinates(record)) {
+      selectedCity = {
+        title: record.city,
+        address: "",
+        latitude: record.latitude,
+        longitude: record.longitude
+      };
+      elements.selectedCity.textContent = `已选择：${selectedCity.title}`;
+    }
     elements.form.placeName.value = record.placeName || "";
     if (hasPreciseCoordinates(record)) {
       selectedPlace = {
@@ -634,14 +660,46 @@ function openEditDialog() {
   openDialog(record);
 }
 
+function clearSelectedCity() {
+  selectedCity = null;
+  elements.selectedCity.textContent = "未选择地图城市";
+  elements.cityResults.innerHTML = "";
+}
+
 function clearSelectedPlace() {
   selectedPlace = null;
   elements.selectedPlace.textContent = "未选择地图地点";
   elements.placeResults.innerHTML = "";
 }
 
+async function handleCitySearch() {
+  const keyword = elements.form.city.value.trim();
+
+  clearSelectedCity();
+  clearSelectedPlace();
+
+  if (!mapState.ready) {
+    elements.cityResults.textContent = "地图还没加载好，请稍后再试。";
+    return;
+  }
+
+  if (!keyword) {
+    elements.cityResults.textContent = "先输入城市，比如“北京”。";
+    return;
+  }
+
+  elements.cityResults.textContent = "正在搜索...";
+
+  try {
+    const candidates = await searchPlaceCandidates("", keyword);
+    renderCityCandidates(candidates);
+  } catch {
+    elements.cityResults.textContent = "没有找到城市。可以换成“北京市”“上海市”这样的完整名称。";
+  }
+}
+
 async function handlePlaceSearch() {
-  const city = elements.form.city.value.trim();
+  const city = getSearchCity();
   const keyword = elements.form.placeName.value.trim();
 
   clearSelectedPlace();
@@ -682,6 +740,32 @@ function renderPlaceCandidates(candidates) {
     });
     elements.placeResults.append(button);
   });
+}
+
+function renderCityCandidates(candidates) {
+  elements.cityResults.innerHTML = "";
+
+  candidates.forEach((candidate) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "place-result";
+    button.innerHTML = `<strong>${candidate.title}</strong><span>${candidate.address || "百度地图搜索结果"}</span>`;
+    button.addEventListener("click", () => {
+      selectedCity = candidate;
+      elements.form.city.value = candidate.title;
+      elements.selectedCity.textContent = `已选择：${candidate.title}`;
+      elements.cityResults.innerHTML = "";
+      clearSelectedPlace();
+    });
+    elements.cityResults.append(button);
+  });
+}
+
+function handleCityInputChange() {
+  if (selectedCity && elements.form.city.value.trim() !== selectedCity.title) {
+    clearSelectedCity();
+    clearSelectedPlace();
+  }
 }
 
 function handlePlaceInputChange() {
@@ -739,7 +823,7 @@ async function handleSubmit(event) {
     const recordId = editingId || `record-${Date.now()}`;
     const record = {
       id: recordId,
-      city: formData.get("city").trim(),
+      city: selectedCity?.title || formData.get("city").trim(),
       placeName: formData.get("placeName").trim(),
       latitude: null,
       longitude: null,
@@ -754,6 +838,9 @@ async function handleSubmit(event) {
       record.latitude = selectedPlace.latitude;
       record.longitude = selectedPlace.longitude;
       record.placeName = selectedPlace.title;
+    } else if (selectedCity && selectedCity.title === record.city && !record.placeName) {
+      record.latitude = selectedCity.latitude;
+      record.longitude = selectedCity.longitude;
     }
     const located = await resolveRecordLocation(record);
     record.latitude = located.latitude;
@@ -932,8 +1019,9 @@ async function handleImport(event) {
 elements.openForm.addEventListener("click", () => openDialog());
 elements.editRecord.addEventListener("click", openEditDialog);
 elements.deleteRecord.addEventListener("click", deleteActiveRecord);
+elements.searchCity.addEventListener("click", handleCitySearch);
 elements.searchPlace.addEventListener("click", handlePlaceSearch);
-elements.form.city.addEventListener("input", clearSelectedPlace);
+elements.form.city.addEventListener("input", handleCityInputChange);
 elements.form.placeName.addEventListener("input", handlePlaceInputChange);
 elements.exportRecords.addEventListener("click", exportRecords);
 elements.importRecords.addEventListener("click", importRecords);
