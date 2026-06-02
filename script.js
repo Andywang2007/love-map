@@ -29,6 +29,10 @@ const demoRecords = [
     stay: "外滩附近的小酒店",
     scene: "第一次国庆见面",
     note: "晚上一起沿着外滩慢慢走，江风很舒服。那天人很多，但还是觉得整个城市都像只剩下我们两个人。",
+    dailyEvents: [
+      { date: "2025-10-02", text: "到上海见面，晚上一起沿着外滩散步。" },
+      { date: "2025-10-03", text: "吃小笼包，拍了很多夜景照片。" }
+    ],
     photos: [
       "https://images.unsplash.com/photo-1538428494232-9c0d8a3ab403?auto=format&fit=crop&w=900&q=80",
       "https://images.unsplash.com/photo-1548919973-5cef591cdbc9?auto=format&fit=crop&w=900&q=80"
@@ -45,6 +49,10 @@ const demoRecords = [
     stay: "西湖边的民宿",
     scene: "冬天一起看湖",
     note: "早上买了热豆浆和小笼包，坐在湖边等太阳出来。没有安排很多行程，只是一起散步也很开心。",
+    dailyEvents: [
+      { date: "2026-01-18", text: "到杭州入住民宿，晚上一起吃热乎的面。" },
+      { date: "2026-01-19", text: "沿西湖散步，在断桥附近等太阳出来。" }
+    ],
     photos: [
       "https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=900&q=80",
       "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80"
@@ -61,6 +69,10 @@ const demoRecords = [
     stay: "珠江新城附近",
     scene: "清明小长假",
     note: "一起吃了早茶，点了太多东西，最后两个人撑到说不出话。晚上坐地铁回去的时候，她靠着我睡着了。",
+    dailyEvents: [
+      { date: "2026-04-04", text: "一起吃早茶，晚上去珠江边散步。" },
+      { date: "2026-04-05", text: "在珠江新城附近逛街，坐地铁回去。" }
+    ],
     photos: [
       "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80",
       "https://images.unsplash.com/photo-1523906834658-6e24ef2386f9?auto=format&fit=crop&w=900&q=80"
@@ -89,6 +101,7 @@ const elements = {
   detailStay: document.querySelector("#detail-stay"),
   detailScene: document.querySelector("#detail-scene"),
   detailNote: document.querySelector("#detail-note"),
+  dailyEvents: document.querySelector("#daily-events"),
   syncStatus: document.querySelector("#sync-status"),
   openForm: document.querySelector("#open-form"),
   editRecord: document.querySelector("#edit-record"),
@@ -117,6 +130,7 @@ const mapState = {
 
 let records = [];
 let activeId = null;
+let activeCity = null;
 let editingId = null;
 let selectedCity = null;
 let selectedPlace = null;
@@ -146,7 +160,7 @@ async function initMap() {
 
   try {
     await loadBaiduMap();
-    const center = new BMapGL.Point(116.4074, 39.9042);
+    const center = new BMapGL.Point(104.1954, 35.8617);
     mapState.map = new BMapGL.Map("map-canvas");
     mapState.map.centerAndZoom(center, 5);
     mapState.map.enableScrollWheelZoom(true);
@@ -246,6 +260,7 @@ function fromCloudRecord(record) {
     stay: record.stay,
     scene: record.scene,
     note: record.note,
+    dailyEvents: record.daily_events ?? [],
     photos: record.photos ?? []
   };
 }
@@ -262,6 +277,7 @@ function toCloudRecord(record) {
     stay: record.stay,
     scene: record.scene,
     note: record.note,
+    daily_events: record.dailyEvents ?? [],
     photos: record.photos
   };
 }
@@ -496,17 +512,83 @@ function sortedRecords() {
   return [...records].sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
 }
 
+function groupRecordsByCity() {
+  const groups = new Map();
+
+  sortedRecords().forEach((record) => {
+    if (!groups.has(record.city)) {
+      groups.set(record.city, []);
+    }
+
+    groups.get(record.city).push(record);
+  });
+
+  return groups;
+}
+
+function getCityCoordinates(city, cityRecords) {
+  const preciseRecord = cityRecords.find(hasPreciseCoordinates);
+
+  if (preciseRecord) {
+    return { lat: preciseRecord.latitude, lng: preciseRecord.longitude };
+  }
+
+  return cityPositions[city] ?? null;
+}
+
+function parseDailyEvents(text) {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separatorIndex = line.search(/[|｜]/);
+
+      if (separatorIndex === -1) {
+        return { date: "", text: line };
+      }
+
+      return {
+        date: line.slice(0, separatorIndex).trim(),
+        text: line.slice(separatorIndex + 1).trim()
+      };
+    });
+}
+
+function stringifyDailyEvents(events = []) {
+  return events
+    .map((event) => (event.date ? `${event.date}|${event.text}` : event.text))
+    .join("\n");
+}
+
 function render() {
   const ordered = sortedRecords();
+  const groups = groupRecordsByCity();
+  const fallbackRecord = ordered[0];
+
+  if (!activeCity && fallbackRecord) {
+    activeCity = fallbackRecord.city;
+  }
+
+  if (activeCity && !groups.has(activeCity)) {
+    activeCity = fallbackRecord?.city ?? null;
+  }
+
+  const cityRecords = groups.get(activeCity) ?? [];
+
+  if (!cityRecords.some((record) => record.id === activeId)) {
+    activeId = cityRecords[0]?.id ?? fallbackRecord?.id ?? null;
+  }
+
   elements.totalCount.textContent = records.length;
   elements.cityCount.textContent = new Set(records.map((record) => record.city)).size;
 
-  renderMarkers(ordered);
-  renderTimeline(ordered);
-  renderDetail(records.find((record) => record.id === activeId) ?? ordered[0]);
+  renderMarkers(groups);
+  renderTimeline(cityRecords);
+  renderDetail(records.find((record) => record.id === activeId) ?? cityRecords[0] ?? fallbackRecord);
 }
 
-function renderMarkers(ordered) {
+function renderMarkers(groups) {
   elements.markerLayer.innerHTML = "";
   mapState.markerLabels.clear();
 
@@ -514,30 +596,29 @@ function renderMarkers(ordered) {
     return;
   }
 
-  ordered.forEach((record, index) => {
-    const coordinates = getCoordinates(record);
+  [...groups.entries()].forEach(([city, cityRecords], index) => {
+    const coordinates = getCityCoordinates(city, cityRecords);
 
     if (!coordinates) {
       return;
     }
 
     const button = document.createElement("button");
-    button.className = `map-marker${record.id === activeId ? " active" : ""}`;
-    button.dataset.city = record.placeName || record.city;
+    button.className = `map-marker city-pin${city === activeCity ? " active" : ""}`;
+    button.dataset.city = `${city} · ${cityRecords.length}次`;
     button.type = "button";
-    button.ariaLabel = `查看${record.placeName || record.city}的见面记录`;
-    button.textContent = String(index + 1).padStart(2, "0");
-    button.addEventListener("click", () => selectRecord(record.id));
+    button.ariaLabel = `查看${city}的见面记录`;
+    button.innerHTML = `<span>${cityRecords.length}</span>`;
+    button.addEventListener("click", () => selectCity(city));
     elements.markerLayer.append(button);
 
-    mapState.markerLabels.set(record.id, {
+    mapState.markerLabels.set(city, {
       label: button,
       point: new BMapGL.Point(coordinates.lng, coordinates.lat)
     });
   });
 
   positionMarkerLabels();
-  focusMapOnRecord(records.find((record) => record.id === activeId), false);
 }
 
 function positionMarkerLabels() {
@@ -570,6 +651,25 @@ function focusMapOnRecord(record, shouldZoom = true) {
   window.setTimeout(positionMarkerLabels, 80);
 }
 
+function focusMapOnCity(city, shouldZoom = true) {
+  const groups = groupRecordsByCity();
+  const cityRecords = groups.get(city);
+
+  if (!mapState.ready || !cityRecords) {
+    return;
+  }
+
+  const coordinates = getCityCoordinates(city, cityRecords);
+  if (!coordinates) {
+    return;
+  }
+
+  const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
+  const targetZoom = shouldZoom ? Math.max(mapState.map.getZoom(), 11) : Math.max(mapState.map.getZoom(), 5);
+  mapState.map.centerAndZoom(point, targetZoom);
+  window.setTimeout(positionMarkerLabels, 80);
+}
+
 function renderTimeline(ordered) {
   elements.timeline.innerHTML = "";
 
@@ -578,7 +678,7 @@ function renderTimeline(ordered) {
     const button = document.createElement("button");
     button.className = record.id === activeId ? "active" : "";
     button.type = "button";
-    button.innerHTML = `<strong>${record.placeName || record.city} · ${record.scene}</strong><span>${record.city} · ${formatDateRange(record)}</span>`;
+    button.innerHTML = `<strong>${record.scene}</strong><span>${record.placeName || record.city} · ${formatDateRange(record)}</span>`;
     button.addEventListener("click", () => selectRecord(record.id));
     item.append(button);
     elements.timeline.append(item);
@@ -595,6 +695,7 @@ function renderDetail(record) {
     elements.detailStay.textContent = "-";
     elements.detailScene.textContent = "-";
     elements.detailNote.textContent = "点击“新增记录”，把你们下一次见面写进地图。";
+    elements.dailyEvents.innerHTML = "";
     elements.photoGrid.innerHTML = "";
     return;
   }
@@ -608,6 +709,7 @@ function renderDetail(record) {
   elements.detailStay.textContent = record.stay;
   elements.detailScene.textContent = record.scene;
   elements.detailNote.textContent = record.note;
+  renderDailyEvents(record);
   elements.photoGrid.innerHTML = "";
 
   if (record.photos.length === 0) {
@@ -629,10 +731,44 @@ function renderDetail(record) {
   });
 }
 
+function renderDailyEvents(record) {
+  const events = record.dailyEvents ?? [];
+  elements.dailyEvents.innerHTML = "";
+
+  if (events.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "daily-empty";
+    empty.textContent = "这次还没有按天记录，可以编辑后补上吃了什么、去了哪里。";
+    elements.dailyEvents.append(empty);
+    return;
+  }
+
+  events.forEach((event) => {
+    const item = document.createElement("article");
+    const date = document.createElement("strong");
+    const text = document.createElement("p");
+    item.className = "daily-event";
+    date.textContent = event.date || "某一天";
+    text.textContent = event.text;
+    item.append(date, text);
+    elements.dailyEvents.append(item);
+  });
+}
+
 function selectRecord(id) {
   activeId = id;
+  activeCity = records.find((record) => record.id === id)?.city ?? activeCity;
   render();
   focusMapOnRecord(records.find((record) => record.id === id));
+}
+
+function selectCity(city) {
+  const groups = groupRecordsByCity();
+  const cityRecords = groups.get(city) ?? [];
+  activeCity = city;
+  activeId = cityRecords[0]?.id ?? null;
+  render();
+  focusMapOnCity(city);
 }
 
 function openDialog(record = null) {
@@ -670,6 +806,7 @@ function openDialog(record = null) {
     elements.form.stay.value = record.stay;
     elements.form.scene.value = record.scene;
     elements.form.note.value = record.note;
+    elements.form.dailyEvents.value = stringifyDailyEvents(record.dailyEvents ?? []);
   }
 
   elements.dialog.showModal();
@@ -862,6 +999,7 @@ async function handleSubmit(event) {
       stay: formData.get("stay").trim(),
       scene: formData.get("scene").trim(),
       note: formData.get("note").trim(),
+      dailyEvents: parseDailyEvents(formData.get("dailyEvents") || ""),
       photos: originalRecord?.photos ?? []
     };
     if (selectedPlace && selectedPlace.title === record.placeName) {
@@ -932,7 +1070,12 @@ async function handleSubmit(event) {
 function formatCloudError(error) {
   const message = error.message || error.details || "";
 
-  if (message.includes("latitude") || message.includes("longitude") || message.includes("place_name")) {
+  if (
+    message.includes("latitude") ||
+    message.includes("longitude") ||
+    message.includes("place_name") ||
+    message.includes("daily_events")
+  ) {
     return "云端数据库还没升级：请在 Supabase SQL Editor 运行新增地点字段的 SQL。";
   }
 
@@ -1027,6 +1170,7 @@ function isValidRecord(record) {
     typeof record.stay === "string" &&
     typeof record.scene === "string" &&
     typeof record.note === "string" &&
+    (Array.isArray(record.dailyEvents) || record.dailyEvents === undefined) &&
     Array.isArray(record.photos)
   );
 }

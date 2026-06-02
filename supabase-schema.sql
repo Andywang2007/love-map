@@ -9,6 +9,7 @@ create table if not exists public.meeting_records (
   stay text not null,
   scene text not null,
   note text not null,
+  daily_events jsonb not null default '[]'::jsonb,
   photos text[] not null default '{}',
   created_at timestamptz not null default now()
 );
@@ -16,7 +17,8 @@ create table if not exists public.meeting_records (
 alter table public.meeting_records
 add column if not exists place_name text,
 add column if not exists latitude double precision,
-add column if not exists longitude double precision;
+add column if not exists longitude double precision,
+add column if not exists daily_events jsonb not null default '[]'::jsonb;
 
 alter table public.meeting_records enable row level security;
 
@@ -54,3 +56,5 @@ drop policy if exists "Public can upload meeting photos" on storage.objects;
 create policy "Public can upload meeting photos"
 on storage.objects for insert
 with check (bucket_id = 'meeting-photos');
+
+notify pgrst, 'reload schema';

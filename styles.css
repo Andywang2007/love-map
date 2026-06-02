@@ -293,6 +293,44 @@ h2 {
   transform: scale(1.08);
 }
 
+.city-pin {
+  display: grid;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  translate: -50% -88%;
+  border-radius: 50% 50% 50% 6px;
+  background: linear-gradient(135deg, #f5d98a, #d59e42);
+  box-shadow: 0 14px 24px rgba(0, 0, 0, 0.38);
+  color: #19130b;
+  font-weight: 800;
+  place-items: center;
+  transform: rotate(-45deg);
+}
+
+.city-pin span {
+  transform: rotate(45deg);
+}
+
+.city-pin::after {
+  position: absolute;
+  left: 24px;
+  top: 24px;
+  padding: 5px 8px;
+  border: 1px solid rgba(224, 191, 115, 0.32);
+  border-radius: 999px;
+  color: #f8ead1;
+  background: rgba(12, 18, 28, 0.78);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.28);
+  transform: rotate(45deg);
+}
+
+.city-pin.active {
+  background: linear-gradient(135deg, #ffe7a3, #e6ad45);
+  transform: rotate(-45deg) scale(1.12);
+}
+
 .detail-panel {
   display: flex;
   flex-direction: column;
@@ -328,6 +366,42 @@ h2 {
   margin-bottom: 16px;
   color: #d8d1c9;
   line-height: 1.75;
+}
+
+.daily-events-wrap {
+  margin-bottom: 16px;
+}
+
+.daily-events {
+  display: grid;
+  gap: 8px;
+}
+
+.daily-event,
+.daily-empty {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.daily-event strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--gold);
+  font-size: 0.86rem;
+}
+
+.daily-event p {
+  margin: 0;
+  color: #d8d1c9;
+  line-height: 1.6;
+}
+
+.daily-empty {
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .photo-grid {
