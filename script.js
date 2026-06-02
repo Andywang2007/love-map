@@ -110,6 +110,8 @@ const elements = {
   detailStay: document.querySelector("#detail-stay"),
   detailNote: document.querySelector("#detail-note"),
   dailyEvents: document.querySelector("#daily-events"),
+  dailyEventsList: document.querySelector("#daily-events-list"),
+  addDailyEvent: document.querySelector("#add-daily-event"),
   syncStatus: document.querySelector("#sync-status"),
   openForm: document.querySelector("#open-form"),
   editRecord: document.querySelector("#edit-record"),
@@ -614,29 +616,114 @@ function getCityCoordinates(city, cityRecords) {
   return cityPositions[city] ?? null;
 }
 
-function parseDailyEvents(text) {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const separatorIndex = line.search(/[|｜]/);
+function toDateInputValue(dateText) {
+  const match = String(dateText || "").match(/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/);
 
-      if (separatorIndex === -1) {
-        return { date: "", text: line };
-      }
+  if (!match) {
+    return "";
+  }
 
-      return {
-        date: line.slice(0, separatorIndex).trim(),
-        text: line.slice(separatorIndex + 1).trim()
-      };
-    });
+  const [, year, month, day] = match;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
-function stringifyDailyEvents(events = []) {
-  return events
-    .map((event) => (event.date ? `${event.date}|${event.text}` : event.text))
-    .join("\n");
+function normalizeDailyEvent(event) {
+  if (typeof event === "string") {
+    return normalizeDailyEvent({ date: "", text: event });
+  }
+
+  let date = toDateInputValue(event?.date);
+  let text = (event?.text || "").trim();
+
+  if (!date) {
+    const leadingDate = text.match(/^(\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}日?)\s*/);
+
+    if (leadingDate) {
+      date = toDateInputValue(leadingDate[1]);
+      text = text.slice(leadingDate[0].length).trim();
+    }
+  }
+
+  return {
+    date,
+    text
+  };
+}
+
+function createDailyEventRow(event = {}) {
+  const row = document.createElement("div");
+  const dateInput = document.createElement("input");
+  const textInput = document.createElement("textarea");
+  const removeButton = document.createElement("button");
+
+  row.className = "daily-event-row";
+
+  dateInput.className = "daily-event-date";
+  dateInput.type = "date";
+  dateInput.min = elements.form.startDate?.value || "";
+  dateInput.max = elements.form.endDate?.value || "";
+  dateInput.value = event.date || elements.form.startDate?.value || "";
+
+  textInput.className = "daily-event-text";
+  textInput.rows = 2;
+  textInput.placeholder = "例如：中午去朝阳站接她，晚上吃牛排";
+  textInput.value = event.text || "";
+
+  removeButton.className = "ghost-button remove-daily-event";
+  removeButton.type = "button";
+  removeButton.textContent = "删除";
+
+  row.append(dateInput, textInput, removeButton);
+  return row;
+}
+
+function addDailyEventRow(event = {}) {
+  elements.dailyEventsList.append(createDailyEventRow(normalizeDailyEvent(event)));
+}
+
+function renderDailyEventRows(events = []) {
+  elements.dailyEventsList.innerHTML = "";
+  const rows = events.length > 0 ? events.map(normalizeDailyEvent) : [{}];
+  rows.forEach(addDailyEventRow);
+}
+
+function readDailyEventRows() {
+  const fallbackDate = elements.form.startDate.value;
+
+  return [...elements.dailyEventsList.querySelectorAll(".daily-event-row")]
+    .map((row) => ({
+      date: row.querySelector(".daily-event-date").value || fallbackDate,
+      text: row.querySelector(".daily-event-text").value.trim()
+    }))
+    .filter((event) => event.text);
+}
+
+function syncDailyEventDateBounds() {
+  const startDate = elements.form.startDate.value;
+  const endDate = elements.form.endDate.value;
+
+  elements.dailyEventsList.querySelectorAll(".daily-event-date").forEach((input) => {
+    input.min = startDate;
+    input.max = endDate;
+
+    if (!input.value && startDate) {
+      input.value = startDate;
+    }
+  });
+}
+
+function handleDailyEventsListClick(event) {
+  const row = event.target.closest(".daily-event-row");
+
+  if (!row || !event.target.classList.contains("remove-daily-event")) {
+    return;
+  }
+
+  row.remove();
+
+  if (elements.dailyEventsList.querySelectorAll(".daily-event-row").length === 0) {
+    addDailyEventRow();
+  }
 }
 
 function clearMapOverlays() {
@@ -880,12 +967,12 @@ function renderDailyEvents(record) {
     return;
   }
 
-  events.forEach((event) => {
+  events.map(normalizeDailyEvent).forEach((event) => {
     const item = document.createElement("article");
     const date = document.createElement("strong");
     const text = document.createElement("p");
     item.className = "daily-event";
-    date.textContent = event.date || "某一天";
+    date.textContent = event.date ? formatDate(event.date) : "某一天";
     text.textContent = event.text;
     item.append(date, text);
     elements.dailyEvents.append(item);
@@ -985,6 +1072,7 @@ function openDialog(record = null) {
   clearSelectedCity();
   clearSelectedStay();
   renderPlaceRows();
+  renderDailyEventRows();
   editingId = record?.id ?? null;
   document.querySelector("#dialog-title").textContent = editingId ? "编辑见面记录" : "新增见面记录";
   elements.form.querySelector('button[type="submit"]').textContent = editingId ? "保存修改" : "保存记录";
@@ -1013,7 +1101,7 @@ function openDialog(record = null) {
       elements.selectedStay.textContent = `已选择：${record.stay}`;
     }
     elements.form.note.value = record.note;
-    elements.form.dailyEvents.value = stringifyDailyEvents(record.dailyEvents ?? []);
+    renderDailyEventRows(record.dailyEvents ?? []);
   }
 
   elements.dialog.showModal();
@@ -1299,7 +1387,7 @@ async function handleSubmit(event) {
       stayLongitude: selectedStay?.longitude ?? (canReuseStayCoordinates ? originalRecord?.stayLongitude : null) ?? null,
       scene: originalRecord?.scene || "",
       note: formData.get("note").trim(),
-      dailyEvents: parseDailyEvents(formData.get("dailyEvents") || ""),
+      dailyEvents: readDailyEventRows(),
       photos: originalRecord?.photos ?? []
     };
 
@@ -1526,9 +1614,13 @@ elements.searchCity.addEventListener("click", handleCitySearch);
 elements.searchStay.addEventListener("click", handleStaySearch);
 elements.form.city.addEventListener("input", handleCityInputChange);
 elements.form.stay.addEventListener("input", handleStayInputChange);
+elements.form.startDate.addEventListener("change", syncDailyEventDateBounds);
+elements.form.endDate.addEventListener("change", syncDailyEventDateBounds);
 elements.addPlace.addEventListener("click", () => addPlaceRow());
 elements.placesList.addEventListener("input", handlePlacesListInput);
 elements.placesList.addEventListener("click", handlePlacesListClick);
+elements.addDailyEvent.addEventListener("click", () => addDailyEventRow());
+elements.dailyEventsList.addEventListener("click", handleDailyEventsListClick);
 elements.exportRecords.addEventListener("click", exportRecords);
 elements.importRecords.addEventListener("click", importRecords);
 elements.importFile.addEventListener("change", handleImport);

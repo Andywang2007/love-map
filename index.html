@@ -152,14 +152,13 @@
           <textarea name="note" required rows="4" placeholder="写下这次见面的细节"></textarea>
         </label>
 
-        <label>
-          每日事件
-          <textarea
-            name="dailyEvents"
-            rows="5"
-            placeholder="每行一条，例如：&#10;2026-06-11|到北京南站，晚上吃烤鸭&#10;2026-06-12|逛798艺术区，喝咖啡"
-          ></textarea>
-        </label>
+        <div class="daily-events-editor">
+          <div class="form-section-head">
+            <span>每日事件</span>
+            <button class="ghost-button" id="add-daily-event" type="button">+ 添加每日事件</button>
+          </div>
+          <div class="daily-events-list" id="daily-events-list"></div>
+        </div>
 
         <label>
           照片

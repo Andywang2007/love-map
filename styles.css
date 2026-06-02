@@ -532,6 +532,11 @@ h2 {
   gap: 10px;
 }
 
+.daily-events-editor {
+  display: grid;
+  gap: 10px;
+}
+
 .form-section-head {
   display: flex;
   align-items: center;
@@ -552,6 +557,26 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.daily-events-list {
+  display: grid;
+  gap: 12px;
+}
+
+.daily-event-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.45fr) 1fr auto;
+  gap: 8px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.daily-event-row .ghost-button {
+  min-height: 43px;
 }
 
 .place-result {
@@ -617,6 +642,10 @@ h2 {
 
   .map-canvas {
     min-height: 460px;
+  }
+
+  .daily-event-row {
+    grid-template-columns: 1fr;
   }
 
   .primary-button,
