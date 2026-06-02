@@ -842,23 +842,34 @@ async function handleSubmit(event) {
       record.latitude = selectedCity.latitude;
       record.longitude = selectedCity.longitude;
     }
-    const located = await resolveRecordLocation(record);
+    let located;
+    try {
+      located = await resolveRecordLocation(record);
+    } catch {
+      throw new Error("没有定位到这个城市或地点，请先点“搜索城市”或“搜索地点”并选择一个结果。");
+    }
+
     record.latitude = located.latitude;
     record.longitude = located.longitude;
     record.placeName = record.placeName || located.placeName;
 
     if (cloudEnabled) {
-      record.photos = [
-        ...record.photos,
-        ...(await uploadPhotos(record.id, elements.form.photos.files))
-      ];
+      try {
+        record.photos = [
+          ...record.photos,
+          ...(await uploadPhotos(record.id, elements.form.photos.files))
+        ];
+      } catch {
+        throw new Error("照片上传失败，请稍后再试，或先不选照片保存。");
+      }
+
       const request = editingId
         ? cloud.from(tableName).update(toCloudRecord(record)).eq("id", record.id)
         : cloud.from(tableName).insert(toCloudRecord(record));
       const { error } = await request;
 
       if (error) {
-        throw error;
+        throw new Error(`云端保存失败：${error.message || error.details || "请检查 Supabase 表字段和权限"}`);
       }
 
       activeId = record.id;
@@ -879,8 +890,9 @@ async function handleSubmit(event) {
     }
 
     focusMapOnRecord(record);
-  } catch {
-    alert("保存失败：请填写真实城市，具体地点可以留空或填写可搜索到的地点。");
+  } catch (error) {
+    console.error(error);
+    alert(`保存失败：${error.message || "未知错误"}`);
   } finally {
     submitButton.disabled = false;
     submitButton.textContent = editingId ? "保存修改" : "保存记录";
