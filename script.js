@@ -431,6 +431,22 @@ async function resolveRecordLocation(record) {
     };
   }
 
+  if (record.placeName) {
+    try {
+      const [candidate] = await searchPlaceCandidates(getSearchCity(), record.placeName);
+
+      if (candidate) {
+        return {
+          latitude: candidate.latitude,
+          longitude: candidate.longitude,
+          placeName: candidate.title
+        };
+      }
+    } catch {
+      // Continue to city fallback below.
+    }
+  }
+
   try {
     return await searchPlace(record);
   } catch {
@@ -440,6 +456,20 @@ async function resolveRecordLocation(record) {
         longitude: selectedCity.longitude,
         placeName: record.city
       };
+    }
+
+    try {
+      const [cityCandidate] = await searchPlaceCandidates("", record.city);
+
+      if (cityCandidate) {
+        return {
+          latitude: cityCandidate.latitude,
+          longitude: cityCandidate.longitude,
+          placeName: record.city
+        };
+      }
+    } catch {
+      // Continue to built-in city fallback below.
     }
 
     const cityOnlyRecord = { ...record, placeName: "" };
@@ -846,7 +876,7 @@ async function handleSubmit(event) {
     try {
       located = await resolveRecordLocation(record);
     } catch {
-      throw new Error("没有定位到这个城市或地点，请先点“搜索城市”或“搜索地点”并选择一个结果。");
+      throw new Error("没有定位到这个城市或地点，请换一个更完整的城市/地点名称。");
     }
 
     record.latitude = located.latitude;
