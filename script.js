@@ -1,6 +1,3 @@
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-
 const STORAGE_KEY = "long-distance-meeting-records";
 
 const cityPositions = {
@@ -76,9 +73,11 @@ const tableName = config.tableName || "meeting_records";
 const photoBucket = config.photoBucket || "meeting-photos";
 const cloudEnabled = Boolean(config.url && config.anonKey && window.supabase);
 const cloud = cloudEnabled ? window.supabase.createClient(config.url, config.anonKey) : null;
+const mapEnabled = Boolean(config.baiduAk);
 
 const elements = {
-  globeCanvas: document.querySelector("#globe-canvas"),
+  mapCanvas: document.querySelector("#map-canvas"),
+  mapLoading: document.querySelector("#map-loading"),
   markerLayer: document.querySelector("#marker-layer"),
   timeline: document.querySelector("#timeline"),
   photoGrid: document.querySelector("#photo-grid"),
@@ -104,141 +103,20 @@ const elements = {
   form: document.querySelector("#record-form")
 };
 
+const mapState = {
+  map: null,
+  ready: false,
+  markerLabels: new Map()
+};
+
 let records = [];
 let activeId = null;
 let editingId = null;
-let globe = null;
 
 init();
 
-function initGlobe() {
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  const raycaster = new THREE.Raycaster();
-  const pointer = new THREE.Vector2();
-  const pins = new Map();
-  const radius = 2;
-
-  camera.position.set(0, 0.45, 6.4);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
-  renderer.domElement.className = "globe-renderer";
-  elements.globeCanvas.prepend(renderer.domElement);
-
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.enablePan = false;
-  controls.minDistance = 3.2;
-  controls.maxDistance = 9;
-  controls.rotateSpeed = 0.22;
-  controls.zoomSpeed = 0.45;
-  controls.dampingFactor = 0.07;
-
-  scene.add(new THREE.AmbientLight(0xffffff, 1.35));
-
-  const sunlight = new THREE.DirectionalLight(0xffffff, 2.4);
-  sunlight.position.set(3, 2, 4);
-  scene.add(sunlight);
-
-  const earthTexture = new THREE.TextureLoader().load(
-    "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg"
-  );
-  const bumpTexture = new THREE.TextureLoader().load(
-    "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png"
-  );
-  const cloudTexture = new THREE.TextureLoader().load(
-    "https://cdn.jsdelivr.net/npm/three-globe/example/img/fair_clouds_4k.png"
-  );
-  earthTexture.colorSpace = THREE.SRGBColorSpace;
-  earthTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  bumpTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  cloudTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-
-  const earth = new THREE.Mesh(
-    new THREE.SphereGeometry(radius, 96, 96),
-    new THREE.MeshStandardMaterial({
-      map: earthTexture,
-      bumpMap: bumpTexture,
-      bumpScale: 0.035,
-      roughness: 0.78,
-      metalness: 0.08
-    })
-  );
-  scene.add(earth);
-
-  const clouds = new THREE.Mesh(
-    new THREE.SphereGeometry(radius * 1.012, 96, 96),
-    new THREE.MeshStandardMaterial({
-      map: cloudTexture,
-      transparent: true,
-      opacity: 0.32,
-      roughness: 0.82
-    })
-  );
-  scene.add(clouds);
-
-  const atmosphere = new THREE.Mesh(
-    new THREE.SphereGeometry(radius * 1.035, 96, 96),
-    new THREE.MeshBasicMaterial({
-      color: 0x8cc7ff,
-      transparent: true,
-      opacity: 0.14,
-      side: THREE.BackSide
-    })
-  );
-  scene.add(atmosphere);
-
-  const stars = new THREE.Points(
-    new THREE.BufferGeometry().setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(createStars(), 3)
-    ),
-    new THREE.PointsMaterial({ color: 0xffffff, opacity: 0.45, size: 0.018, transparent: true })
-  );
-  scene.add(stars);
-
-  function resize() {
-    const { width, height } = elements.globeCanvas.getBoundingClientRect();
-    camera.aspect = width / height;
-    camera.updateProjectionMatrix();
-    renderer.setSize(width, height);
-  }
-
-  function animate() {
-    controls.update();
-    stars.rotation.y += 0.00012;
-    clouds.rotation.y += 0.00005;
-    updateMarkerLabels(camera, pins);
-    renderer.render(scene, camera);
-    requestAnimationFrame(animate);
-  }
-
-  renderer.domElement.addEventListener("click", (event) => {
-    const rect = renderer.domElement.getBoundingClientRect();
-    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
-    raycaster.setFromCamera(pointer, camera);
-
-    const hit = raycaster
-      .intersectObjects([...pins.values()].map((pin) => pin.hitTarget))
-      .find((candidate) => isPointFacingCamera(candidate.object, camera));
-    if (hit?.object.userData.recordId) {
-      selectRecord(hit.object.userData.recordId);
-    }
-  });
-
-  window.addEventListener("resize", resize);
-  resize();
-  animate();
-
-  globe = { scene, camera, earth, pins, radius };
-}
-
 async function init() {
-  initGlobe();
+  await initMap();
   setStatus(cloudEnabled ? "正在连接云端..." : "本地模式：填写 config.js 后开启云端同步");
 
   if (cloudEnabled) {
@@ -247,8 +125,54 @@ async function init() {
   } else {
     records = loadLocalRecords();
     activeId = records[0]?.id ?? null;
+    await ensureRecordLocations(false);
     render();
   }
+}
+
+async function initMap() {
+  if (!mapEnabled) {
+    elements.mapLoading.textContent = "请先在 config.js 填写百度地图 baiduAk";
+    return;
+  }
+
+  try {
+    await loadBaiduMap();
+    const center = new BMapGL.Point(116.4074, 39.9042);
+    mapState.map = new BMapGL.Map("map-canvas");
+    mapState.map.centerAndZoom(center, 5);
+    mapState.map.enableScrollWheelZoom(true);
+    mapState.ready = true;
+    elements.mapLoading.hidden = true;
+
+    ["zoomend", "moveend", "moving", "resize"].forEach((eventName) => {
+      mapState.map.addEventListener(eventName, positionMarkerLabels);
+    });
+  } catch {
+    elements.mapLoading.textContent = "百度地图加载失败，请检查 baiduAk";
+  }
+}
+
+function loadBaiduMap() {
+  if (window.BMapGL) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const callbackName = `initBaiduMap${Date.now()}`;
+    const script = document.createElement("script");
+
+    window[callbackName] = () => {
+      delete window[callbackName];
+      resolve();
+    };
+
+    script.src = `https://api.map.baidu.com/api?v=1.0&type=webgl&ak=${encodeURIComponent(
+      config.baiduAk
+    )}&callback=${callbackName}`;
+    script.onerror = reject;
+    document.head.append(script);
+  });
 }
 
 function loadLocalRecords() {
@@ -279,13 +203,15 @@ async function loadCloudRecords() {
     records = loadLocalRecords();
     activeId = records[0]?.id ?? null;
     setStatus("云端连接失败，暂时显示本地记录");
+    await ensureRecordLocations(false);
     render();
     return;
   }
 
   records = data.map(fromCloudRecord);
-  activeId = records[0]?.id ?? null;
+  activeId = records.find((record) => record.id === activeId)?.id ?? records[0]?.id ?? null;
   setStatus(records.length > 0 ? "云端同步已开启" : "云端同步已开启，还没有记录");
+  await ensureRecordLocations(true);
   render();
 }
 
@@ -356,58 +282,89 @@ function formatDate(dateText) {
 }
 
 function formatPlace(record) {
-  const coordinates = getCoordinates(record);
-  const place = record.placeName || record.city;
-  return `${place} · ${coordinates.lat.toFixed(4)}, ${coordinates.lng.toFixed(4)}`;
+  return record.placeName || record.city;
+}
+
+function hasPreciseCoordinates(record) {
+  return Number.isFinite(record.latitude) && Number.isFinite(record.longitude);
 }
 
 function getCoordinates(record) {
-  if (Number.isFinite(record.latitude) && Number.isFinite(record.longitude)) {
+  if (hasPreciseCoordinates(record)) {
     return { lat: record.latitude, lng: record.longitude };
   }
 
-  if (cityPositions[record.city]) {
-    return cityPositions[record.city];
-  }
-
-  let total = 0;
-  for (const char of record.city) {
-    total += char.charCodeAt(0);
-  }
-
-  return {
-    lat: 16 + (total % 34),
-    lng: 85 + ((total * 11) % 55)
-  };
+  return cityPositions[record.city] ?? null;
 }
 
-function latLngToVector3(lat, lng, radius) {
-  const phi = THREE.MathUtils.degToRad(90 - lat);
-  const theta = THREE.MathUtils.degToRad(lng + 180);
+async function ensureRecordLocations(shouldPersist) {
+  if (!mapState.ready) {
+    return;
+  }
 
-  return new THREE.Vector3(
-    -(radius * Math.sin(phi) * Math.cos(theta)),
-    radius * Math.cos(phi),
-    radius * Math.sin(phi) * Math.sin(theta)
-  );
-}
+  const updates = [];
 
-function createStars() {
-  const vertices = [];
+  for (const record of records) {
+    if (hasPreciseCoordinates(record)) {
+      continue;
+    }
 
-  for (let index = 0; index < 850; index += 1) {
-    const distance = 18 + Math.random() * 18;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
+    try {
+      const located = await searchPlace(record);
+      record.latitude = located.latitude;
+      record.longitude = located.longitude;
 
-    vertices.push(
-      distance * Math.sin(phi) * Math.cos(theta),
-      distance * Math.sin(phi) * Math.sin(theta),
-      distance * Math.cos(phi)
+      if (!record.placeName && located.placeName) {
+        record.placeName = located.placeName;
+      }
+
+      updates.push(record);
+    } catch {
+      const fallback = cityPositions[record.city];
+      if (fallback) {
+        record.latitude = fallback.lat;
+        record.longitude = fallback.lng;
+      }
+    }
+  }
+
+  if (cloudEnabled && shouldPersist && updates.length > 0) {
+    await Promise.all(
+      updates.map((record) => cloud.from(tableName).update(toCloudRecord(record)).eq("id", record.id))
     );
   }
+}
 
-  return vertices;
+function searchPlace(record) {
+  if (!mapState.ready) {
+    return Promise.reject(new Error("Map is not ready"));
+  }
+
+  const keyword = record.placeName || record.city;
+  const city = record.city || undefined;
+
+  return new Promise((resolve, reject) => {
+    const localSearch = new BMapGL.LocalSearch(city, {
+      onSearchComplete: (results) => {
+        const status = localSearch.getStatus();
+        const success = status === 0 || status === window.BMAP_STATUS_SUCCESS;
+
+        if (!success || !results || results.getCurrentNumPois() === 0) {
+          reject(new Error("Place not found"));
+          return;
+        }
+
+        const poi = results.getPoi(0);
+        resolve({
+          latitude: poi.point.lat,
+          longitude: poi.point.lng,
+          placeName: poi.title || keyword
+        });
+      }
+    });
+
+    localSearch.search(keyword);
+  });
 }
 
 function sortedRecords() {
@@ -426,111 +383,66 @@ function render() {
 
 function renderMarkers(ordered) {
   elements.markerLayer.innerHTML = "";
-  clearGlobePins();
+  mapState.markerLabels.clear();
+
+  if (!mapState.ready) {
+    return;
+  }
 
   ordered.forEach((record, index) => {
     const coordinates = getCoordinates(record);
+
+    if (!coordinates) {
+      return;
+    }
+
     const button = document.createElement("button");
     button.className = `map-marker${record.id === activeId ? " active" : ""}`;
-    button.hidden = true;
     button.dataset.city = record.placeName || record.city;
     button.type = "button";
     button.ariaLabel = `查看${record.placeName || record.city}的见面记录`;
     button.textContent = String(index + 1).padStart(2, "0");
     button.addEventListener("click", () => selectRecord(record.id));
     elements.markerLayer.append(button);
-    addGlobePin(record, index, coordinates, button);
-  });
-}
 
-function clearGlobePins() {
-  if (!globe) {
-    return;
-  }
-
-  globe.pins.forEach((pin) => {
-    globe.earth.remove(pin.group);
-    pin.group.children.forEach((child) => {
-      child.geometry.dispose();
-      child.material.dispose();
+    mapState.markerLabels.set(record.id, {
+      label: button,
+      point: new BMapGL.Point(coordinates.lng, coordinates.lat)
     });
   });
-  globe.pins.clear();
+
+  positionMarkerLabels();
+  focusMapOnRecord(records.find((record) => record.id === activeId), false);
 }
 
-function addGlobePin(record, index, coordinates, label) {
-  if (!globe) {
+function positionMarkerLabels() {
+  if (!mapState.ready) {
     return;
   }
 
-  const position = latLngToVector3(coordinates.lat, coordinates.lng, globe.radius + 0.04);
-  const marker = new THREE.Mesh(
-    new THREE.SphereGeometry(record.id === activeId ? 0.045 : 0.03, 24, 24),
-    new THREE.MeshStandardMaterial({
-      color: record.id === activeId ? 0xf7d77a : 0xf4f0e7,
-      emissive: record.id === activeId ? 0xb87912 : 0x6a82a8,
-      emissiveIntensity: record.id === activeId ? 0.72 : 0.44,
-      roughness: 0.25
-    })
-  );
-  marker.position.copy(position);
-  marker.userData.recordId = record.id;
-
-  const hitTarget = new THREE.Mesh(
-    new THREE.SphereGeometry(0.16, 16, 16),
-    new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0,
-      depthWrite: false
-    })
-  );
-  hitTarget.position.copy(position);
-  hitTarget.userData.recordId = record.id;
-
-  const stem = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.005, 0.005, 0.16, 12),
-    new THREE.MeshStandardMaterial({ color: 0xdce7f7, roughness: 0.35 })
-  );
-  stem.position.copy(latLngToVector3(coordinates.lat, coordinates.lng, globe.radius + 0.015));
-  stem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), stem.position.clone().normalize());
-
-  const group = new THREE.Group();
-  group.add(stem);
-  group.add(marker);
-  group.add(hitTarget);
-  globe.earth.add(group);
-  globe.pins.set(record.id, { mesh: marker, hitTarget, group, label, position, index });
-}
-
-function updateMarkerLabels(camera, pins) {
-  if (!globe) {
-    return;
-  }
-
-  const width = elements.globeCanvas.clientWidth;
-  const height = elements.globeCanvas.clientHeight;
-
-  pins.forEach((pin, recordId) => {
-    const worldPosition = new THREE.Vector3();
-    pin.mesh.getWorldPosition(worldPosition);
-
-    const isVisible = isPointFacingCamera(pin.mesh, camera);
-    const projected = worldPosition.clone().project(camera);
-
-    pin.label.hidden = !isVisible;
-    pin.label.classList.toggle("active", recordId === activeId);
-    pin.label.style.left = `${((projected.x + 1) / 2) * width}px`;
-    pin.label.style.top = `${((-projected.y + 1) / 2) * height}px`;
+  mapState.markerLabels.forEach(({ label, point }) => {
+    const pixel = mapState.map.pointToOverlayPixel
+      ? mapState.map.pointToOverlayPixel(point)
+      : mapState.map.pointToPixel(point);
+    label.style.left = `${pixel.x}px`;
+    label.style.top = `${pixel.y}px`;
   });
 }
 
-function isPointFacingCamera(object, camera) {
-  const worldPosition = new THREE.Vector3();
-  object.getWorldPosition(worldPosition);
+function focusMapOnRecord(record, shouldZoom = true) {
+  if (!mapState.ready || !record) {
+    return;
+  }
 
-  const cameraDirection = worldPosition.clone().sub(camera.position).normalize();
-  const surfaceNormal = worldPosition.clone().normalize();
-  return cameraDirection.dot(surfaceNormal) < -0.18;
+  const coordinates = getCoordinates(record);
+  if (!coordinates) {
+    return;
+  }
+
+  const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
+  const targetZoom = shouldZoom ? Math.max(mapState.map.getZoom(), 15) : mapState.map.getZoom();
+  mapState.map.centerAndZoom(point, targetZoom);
+  window.setTimeout(positionMarkerLabels, 80);
 }
 
 function renderTimeline(ordered) {
@@ -595,6 +507,7 @@ function renderDetail(record) {
 function selectRecord(id) {
   activeId = id;
   render();
+  focusMapOnRecord(records.find((record) => record.id === id));
 }
 
 function openDialog(record = null) {
@@ -606,8 +519,6 @@ function openDialog(record = null) {
   if (record) {
     elements.form.city.value = record.city;
     elements.form.placeName.value = record.placeName || "";
-    elements.form.latitude.value = Number.isFinite(record.latitude) ? record.latitude : "";
-    elements.form.longitude.value = Number.isFinite(record.longitude) ? record.longitude : "";
     elements.form.startDate.value = record.startDate;
     elements.form.endDate.value = record.endDate || "";
     elements.form.stay.value = record.stay;
@@ -631,23 +542,6 @@ function openEditDialog() {
   }
 
   openDialog(record);
-}
-
-function fillCityCoordinates() {
-  const city = elements.form.city.value.trim();
-  const coordinates = cityPositions[city];
-
-  if (!coordinates) {
-    return;
-  }
-
-  if (!elements.form.latitude.value) {
-    elements.form.latitude.value = coordinates.lat;
-  }
-
-  if (!elements.form.longitude.value) {
-    elements.form.longitude.value = coordinates.lng;
-  }
 }
 
 function readPhotosAsDataUrls(files) {
@@ -684,22 +578,25 @@ async function uploadPhotos(recordId, files) {
 async function handleSubmit(event) {
   event.preventDefault();
 
+  if (!mapState.ready) {
+    alert("请先在 config.js 填写百度地图 baiduAk，地图加载后才能自动搜索地点。");
+    return;
+  }
+
   const submitButton = elements.form.querySelector('button[type="submit"]');
   submitButton.disabled = true;
   submitButton.textContent = "保存中...";
 
   try {
     const formData = new FormData(elements.form);
-    const latitude = Number.parseFloat(formData.get("latitude"));
-    const longitude = Number.parseFloat(formData.get("longitude"));
     const originalRecord = records.find((item) => item.id === editingId);
     const recordId = editingId || `record-${Date.now()}`;
     const record = {
       id: recordId,
       city: formData.get("city").trim(),
       placeName: formData.get("placeName").trim(),
-      latitude: Number.isFinite(latitude) ? latitude : null,
-      longitude: Number.isFinite(longitude) ? longitude : null,
+      latitude: null,
+      longitude: null,
       startDate: formData.get("startDate"),
       endDate: formData.get("endDate"),
       stay: formData.get("stay").trim(),
@@ -707,6 +604,10 @@ async function handleSubmit(event) {
       note: formData.get("note").trim(),
       photos: originalRecord?.photos ?? []
     };
+    const located = await searchPlace(record);
+    record.latitude = located.latitude;
+    record.longitude = located.longitude;
+    record.placeName = record.placeName || located.placeName;
 
     if (cloudEnabled) {
       record.photos = [
@@ -738,11 +639,13 @@ async function handleSubmit(event) {
       closeDialog();
       render();
     }
+
+    focusMapOnRecord(record);
   } catch {
-    alert("保存失败，请检查 Supabase 配置和网络后再试。");
+    alert("保存失败：没有搜索到这个地点，或地图/云端配置还没准备好。");
   } finally {
     submitButton.disabled = false;
-    submitButton.textContent = "保存记录";
+    submitButton.textContent = editingId ? "保存修改" : "保存记录";
   }
 }
 
@@ -854,6 +757,7 @@ async function handleImport(event) {
 
     records = imported;
     activeId = records[0].id;
+    await ensureRecordLocations(false);
 
     if (cloudEnabled) {
       const { error } = await cloud.from(tableName).upsert(records.map(toCloudRecord));
@@ -874,7 +778,7 @@ async function handleImport(event) {
   }
 }
 
-elements.openForm.addEventListener("click", openDialog);
+elements.openForm.addEventListener("click", () => openDialog());
 elements.editRecord.addEventListener("click", openEditDialog);
 elements.deleteRecord.addEventListener("click", deleteActiveRecord);
 elements.exportRecords.addEventListener("click", exportRecords);
@@ -883,6 +787,4 @@ elements.importFile.addEventListener("change", handleImport);
 elements.closeForm.addEventListener("click", closeDialog);
 elements.cancelForm.addEventListener("click", closeDialog);
 elements.resetDemo.addEventListener("click", resetDemoRecords);
-elements.form.city.addEventListener("change", fillCityCoordinates);
-elements.form.city.addEventListener("blur", fillCityCoordinates);
 elements.form.addEventListener("submit", handleSubmit);

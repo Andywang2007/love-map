@@ -5,7 +5,8 @@
 ## 当前能力
 
 - 地图点位展示见面城市
-- 支持具体地点、纬度、经度
+- 支持具体地点
+- 输入地点后自动搜索坐标并落到地图上
 - 点击点位查看详情
 - 新增见面记录
 - 编辑 / 删除见面记录
@@ -47,9 +48,12 @@ window.LOVE_MAP_SUPABASE = {
   url: "你的 Project URL",
   anonKey: "你的 anon public key",
   tableName: "meeting_records",
-  photoBucket: "meeting-photos"
+  photoBucket: "meeting-photos",
+  baiduAk: "你的百度地图浏览器端 AK"
 };
 ```
+
+百度地图 AK 需要在百度地图开放平台申请，应用类型选择浏览器端。网页会用它把你输入的具体地点自动搜索成地图坐标。
 
 ### 3. 发布到 GitHub Pages
 

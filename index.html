@@ -6,14 +6,6 @@
     <title>异地恋见面地图</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
-        }
-      }
-    </script>
     <script src="./config.js"></script>
   </head>
   <body>
@@ -54,8 +46,8 @@
           </div>
           <p class="sync-status" id="sync-status">本地模式</p>
 
-          <div class="globe-canvas" id="globe-canvas">
-            <div class="globe-hint">Precise Coordinates</div>
+          <div class="map-canvas" id="map-canvas">
+            <div class="map-loading" id="map-loading">正在加载地图...</div>
             <div class="marker-layer" id="marker-layer"></div>
           </div>
         </section>
@@ -126,17 +118,6 @@
 
         <div class="form-row">
           <label>
-            纬度
-            <input name="latitude" inputmode="decimal" placeholder="例如：31.1434" />
-          </label>
-          <label>
-            经度
-            <input name="longitude" inputmode="decimal" placeholder="例如：121.6579" />
-          </label>
-        </div>
-
-        <div class="form-row">
-          <label>
             开始日期
             <input name="startDate" required type="date" />
           </label>
@@ -173,6 +154,6 @@
       </form>
     </dialog>
 
-    <script type="module" src="./script.js"></script>
+    <script src="./script.js"></script>
   </body>
 </html>

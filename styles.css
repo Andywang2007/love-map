@@ -227,7 +227,7 @@ h2 {
   line-height: 1;
 }
 
-.globe-canvas {
+.map-canvas {
   position: relative;
   height: min(66vh, 680px);
   min-height: 520px;
@@ -235,18 +235,14 @@ h2 {
   overflow: hidden;
   border: 1px solid rgba(231, 221, 215, 0.48);
   border-radius: 8px;
-  background:
-    linear-gradient(145deg, #070b12 0%, #111a29 52%, #060912 100%);
+  background: #101722;
 }
 
-.globe-renderer {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+.map-canvas :is(.BMap_cpyCtrl, .anchorBL) {
+  display: none;
 }
 
-.globe-hint {
+.map-loading {
   position: absolute;
   top: 14px;
   left: 14px;
@@ -282,6 +278,7 @@ h2 {
   pointer-events: auto;
   white-space: nowrap;
   backdrop-filter: blur(8px);
+  z-index: 4;
 }
 
 .map-marker::after {
@@ -449,7 +446,7 @@ h2 {
     margin-top: 18px;
   }
 
-  .globe-canvas {
+  .map-canvas {
     height: 560px;
   }
 
@@ -476,7 +473,7 @@ h2 {
     grid-template-columns: 1fr;
   }
 
-  .globe-canvas {
+  .map-canvas {
     min-height: 460px;
   }
 
