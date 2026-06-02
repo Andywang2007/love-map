@@ -24,6 +24,9 @@ const demoRecords = [
   {
     id: "demo-shanghai",
     city: "上海",
+    placeName: "外滩观景平台",
+    latitude: 31.2407,
+    longitude: 121.4908,
     startDate: "2025-10-02",
     endDate: "2025-10-05",
     stay: "外滩附近的小酒店",
@@ -37,6 +40,9 @@ const demoRecords = [
   {
     id: "demo-hangzhou",
     city: "杭州",
+    placeName: "西湖断桥",
+    latitude: 30.2586,
+    longitude: 120.1494,
     startDate: "2026-01-18",
     endDate: "2026-01-20",
     stay: "西湖边的民宿",
@@ -50,6 +56,9 @@ const demoRecords = [
   {
     id: "demo-guangzhou",
     city: "广州",
+    placeName: "珠江新城",
+    latitude: 23.1199,
+    longitude: 113.3236,
     startDate: "2026-04-04",
     endDate: "2026-04-06",
     stay: "珠江新城附近",
@@ -77,6 +86,7 @@ const elements = {
   cityCount: document.querySelector("#city-count"),
   detailCity: document.querySelector("#detail-city"),
   detailTime: document.querySelector("#detail-time"),
+  detailPlace: document.querySelector("#detail-place"),
   detailStay: document.querySelector("#detail-stay"),
   detailScene: document.querySelector("#detail-scene"),
   detailNote: document.querySelector("#detail-note"),
@@ -109,6 +119,9 @@ function initGlobe() {
 
   camera.position.set(0, 0.45, 6.4);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
   renderer.domElement.className = "globe-renderer";
   elements.globeCanvas.prepend(renderer.domElement);
 
@@ -132,6 +145,13 @@ function initGlobe() {
   const bumpTexture = new THREE.TextureLoader().load(
     "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png"
   );
+  const cloudTexture = new THREE.TextureLoader().load(
+    "https://cdn.jsdelivr.net/npm/three-globe/example/img/fair_clouds_4k.png"
+  );
+  earthTexture.colorSpace = THREE.SRGBColorSpace;
+  earthTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  bumpTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  cloudTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
   const earth = new THREE.Mesh(
     new THREE.SphereGeometry(radius, 96, 96),
@@ -144,6 +164,17 @@ function initGlobe() {
     })
   );
   scene.add(earth);
+
+  const clouds = new THREE.Mesh(
+    new THREE.SphereGeometry(radius * 1.012, 96, 96),
+    new THREE.MeshStandardMaterial({
+      map: cloudTexture,
+      transparent: true,
+      opacity: 0.32,
+      roughness: 0.82
+    })
+  );
+  scene.add(clouds);
 
   const atmosphere = new THREE.Mesh(
     new THREE.SphereGeometry(radius * 1.035, 96, 96),
@@ -175,6 +206,7 @@ function initGlobe() {
   function animate() {
     controls.update();
     stars.rotation.y += 0.00045;
+    clouds.rotation.y += 0.00022;
     updateMarkerLabels(camera, pins);
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
@@ -266,6 +298,9 @@ function fromCloudRecord(record) {
   return {
     id: record.id,
     city: record.city,
+    placeName: record.place_name ?? "",
+    latitude: record.latitude ?? null,
+    longitude: record.longitude ?? null,
     startDate: record.start_date,
     endDate: record.end_date ?? "",
     stay: record.stay,
@@ -279,6 +314,9 @@ function toCloudRecord(record) {
   return {
     id: record.id,
     city: record.city,
+    place_name: record.placeName || null,
+    latitude: Number.isFinite(record.latitude) ? record.latitude : null,
+    longitude: Number.isFinite(record.longitude) ? record.longitude : null,
     start_date: record.startDate,
     end_date: record.endDate || null,
     stay: record.stay,
@@ -311,7 +349,17 @@ function formatDate(dateText) {
   }).format(date);
 }
 
+function formatPlace(record) {
+  const coordinates = getCoordinates(record);
+  const place = record.placeName || record.city;
+  return `${place} · ${coordinates.lat.toFixed(4)}, ${coordinates.lng.toFixed(4)}`;
+}
+
 function getCoordinates(record) {
+  if (Number.isFinite(record.latitude) && Number.isFinite(record.longitude)) {
+    return { lat: record.latitude, lng: record.longitude };
+  }
+
   if (cityPositions[record.city]) {
     return cityPositions[record.city];
   }
@@ -379,10 +427,10 @@ function renderMarkers(ordered) {
     const button = document.createElement("button");
     button.className = `map-marker${record.id === activeId ? " active" : ""}`;
     button.hidden = true;
-    button.dataset.city = record.city;
+    button.dataset.city = record.placeName || record.city;
     button.type = "button";
-    button.ariaLabel = `查看${record.city}的见面记录`;
-    button.textContent = index + 1;
+    button.ariaLabel = `查看${record.placeName || record.city}的见面记录`;
+    button.textContent = String(index + 1).padStart(2, "0");
     button.addEventListener("click", () => selectRecord(record.id));
     elements.markerLayer.append(button);
     addGlobePin(record, index, coordinates, button);
@@ -411,20 +459,20 @@ function addGlobePin(record, index, coordinates, label) {
 
   const position = latLngToVector3(coordinates.lat, coordinates.lng, globe.radius + 0.04);
   const marker = new THREE.Mesh(
-    new THREE.SphereGeometry(record.id === activeId ? 0.075 : 0.055, 24, 24),
+    new THREE.SphereGeometry(record.id === activeId ? 0.045 : 0.03, 24, 24),
     new THREE.MeshStandardMaterial({
-      color: record.id === activeId ? 0xffd36b : 0xff6578,
-      emissive: record.id === activeId ? 0x8c5b00 : 0x7a1022,
-      emissiveIntensity: 0.35,
-      roughness: 0.4
+      color: record.id === activeId ? 0xf7d77a : 0xf4f0e7,
+      emissive: record.id === activeId ? 0xb87912 : 0x6a82a8,
+      emissiveIntensity: record.id === activeId ? 0.72 : 0.44,
+      roughness: 0.25
     })
   );
   marker.position.copy(position);
   marker.userData.recordId = record.id;
 
   const stem = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.012, 0.012, 0.22, 12),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 })
+    new THREE.CylinderGeometry(0.005, 0.005, 0.16, 12),
+    new THREE.MeshStandardMaterial({ color: 0xdce7f7, roughness: 0.35 })
   );
   stem.position.copy(latLngToVector3(coordinates.lat, coordinates.lng, globe.radius + 0.015));
   stem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), stem.position.clone().normalize());
@@ -468,7 +516,7 @@ function renderTimeline(ordered) {
     const button = document.createElement("button");
     button.className = record.id === activeId ? "active" : "";
     button.type = "button";
-    button.innerHTML = `<strong>${record.city} · ${record.scene}</strong><span>${formatDateRange(record)}</span>`;
+    button.innerHTML = `<strong>${record.placeName || record.city} · ${record.scene}</strong><span>${record.city} · ${formatDateRange(record)}</span>`;
     button.addEventListener("click", () => selectRecord(record.id));
     item.append(button);
     elements.timeline.append(item);
@@ -479,6 +527,7 @@ function renderDetail(record) {
   if (!record) {
     elements.detailCity.textContent = "还没有记录";
     elements.detailTime.textContent = "-";
+    elements.detailPlace.textContent = "-";
     elements.detailStay.textContent = "-";
     elements.detailScene.textContent = "-";
     elements.detailNote.textContent = "点击“新增记录”，把你们下一次见面写进地图。";
@@ -489,6 +538,7 @@ function renderDetail(record) {
   activeId = record.id;
   elements.detailCity.textContent = record.city;
   elements.detailTime.textContent = formatDateRange(record);
+  elements.detailPlace.textContent = formatPlace(record);
   elements.detailStay.textContent = record.stay;
   elements.detailScene.textContent = record.scene;
   elements.detailNote.textContent = record.note;
@@ -525,6 +575,23 @@ function openDialog() {
 
 function closeDialog() {
   elements.dialog.close();
+}
+
+function fillCityCoordinates() {
+  const city = elements.form.city.value.trim();
+  const coordinates = cityPositions[city];
+
+  if (!coordinates) {
+    return;
+  }
+
+  if (!elements.form.latitude.value) {
+    elements.form.latitude.value = coordinates.lat;
+  }
+
+  if (!elements.form.longitude.value) {
+    elements.form.longitude.value = coordinates.lng;
+  }
 }
 
 function readPhotosAsDataUrls(files) {
@@ -567,9 +634,14 @@ async function handleSubmit(event) {
 
   try {
     const formData = new FormData(elements.form);
+    const latitude = Number.parseFloat(formData.get("latitude"));
+    const longitude = Number.parseFloat(formData.get("longitude"));
     const record = {
       id: `record-${Date.now()}`,
       city: formData.get("city").trim(),
+      placeName: formData.get("placeName").trim(),
+      latitude: Number.isFinite(latitude) ? latitude : null,
+      longitude: Number.isFinite(longitude) ? longitude : null,
       startDate: formData.get("startDate"),
       endDate: formData.get("endDate"),
       stay: formData.get("stay").trim(),
@@ -655,6 +727,9 @@ function isValidRecord(record) {
     record &&
     typeof record.id === "string" &&
     typeof record.city === "string" &&
+    (typeof record.placeName === "string" || record.placeName === undefined) &&
+    (typeof record.latitude === "number" || record.latitude === null || record.latitude === undefined) &&
+    (typeof record.longitude === "number" || record.longitude === null || record.longitude === undefined) &&
     typeof record.startDate === "string" &&
     typeof record.stay === "string" &&
     typeof record.scene === "string" &&
@@ -706,4 +781,6 @@ elements.importFile.addEventListener("change", handleImport);
 elements.closeForm.addEventListener("click", closeDialog);
 elements.cancelForm.addEventListener("click", closeDialog);
 elements.resetDemo.addEventListener("click", resetDemoRecords);
+elements.form.city.addEventListener("change", fillCityCoordinates);
+elements.form.city.addEventListener("blur", fillCityCoordinates);
 elements.form.addEventListener("submit", handleSubmit);

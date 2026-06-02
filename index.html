@@ -55,7 +55,7 @@
           <p class="sync-status" id="sync-status">本地模式</p>
 
           <div class="globe-canvas" id="globe-canvas">
-            <div class="globe-hint">拖动旋转 · 滚轮放大 · 点击坐标查看</div>
+            <div class="globe-hint">Precise Coordinates</div>
             <div class="marker-layer" id="marker-layer"></div>
           </div>
         </section>
@@ -70,6 +70,10 @@
             <div>
               <span>时间</span>
               <strong id="detail-time">-</strong>
+            </div>
+            <div>
+              <span>具体地点</span>
+              <strong id="detail-place">-</strong>
             </div>
             <div>
               <span>住处</span>
@@ -110,6 +114,22 @@
           城市
           <input name="city" required placeholder="例如：上海" />
         </label>
+
+        <label>
+          具体地点
+          <input name="placeName" placeholder="例如：上海迪士尼乐园、杭州西湖断桥" />
+        </label>
+
+        <div class="form-row">
+          <label>
+            纬度
+            <input name="latitude" inputmode="decimal" placeholder="例如：31.1434" />
+          </label>
+          <label>
+            经度
+            <input name="longitude" inputmode="decimal" placeholder="例如：121.6579" />
+          </label>
+        </div>
 
         <div class="form-row">
           <label>

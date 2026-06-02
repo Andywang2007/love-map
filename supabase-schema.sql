@@ -1,6 +1,9 @@
 create table if not exists public.meeting_records (
   id text primary key,
   city text not null,
+  place_name text,
+  latitude double precision,
+  longitude double precision,
   start_date date not null,
   end_date date,
   stay text not null,
@@ -9,6 +12,11 @@ create table if not exists public.meeting_records (
   photos text[] not null default '{}',
   created_at timestamptz not null default now()
 );
+
+alter table public.meeting_records
+add column if not exists place_name text,
+add column if not exists latitude double precision,
+add column if not exists longitude double precision;
 
 alter table public.meeting_records enable row level security;
 
