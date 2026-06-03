@@ -103,6 +103,9 @@ const elements = {
   countryGlobe: document.querySelector("#country-globe"),
   nightMapStage: document.querySelector("#night-map-stage"),
   nightMapWorld: document.querySelector("#night-map-world"),
+  nightZoomIn: document.querySelector("#night-zoom-in"),
+  nightZoomOut: document.querySelector("#night-zoom-out"),
+  nightReset: document.querySelector("#night-reset"),
   globePins: document.querySelector("#globe-pins"),
   markerLayer: document.querySelector("#marker-layer"),
   timeline: document.querySelector("#timeline"),
@@ -162,10 +165,11 @@ let nightMapView = {
   dragging: false,
   startX: 0,
   startY: 0,
-  centerLng: 104.2,
-  centerLat: 34.8,
-  startCenterLng: 104.2,
-  startCenterLat: 34.8
+  offsetX: 0,
+  offsetY: 0,
+  startOffsetX: 0,
+  startOffsetY: 0,
+  scale: 1
 };
 
 init();
@@ -814,9 +818,7 @@ function renderMarkers(groups) {
   elements.countryGlobe.hidden = shouldShowCityMap;
 
   if (!shouldShowCityMap) {
-    if (mapState.ready) {
-      renderCityMarkers(groups);
-    }
+    renderGlobePins(groups);
     return;
   }
 
@@ -827,34 +829,21 @@ function renderMarkers(groups) {
   renderPlaceMarkers(groups.get(activeCity));
 }
 
-function renderCityMarkers(groups) {
-  [...groups.entries()].forEach(([city, cityRecords]) => {
-    const coordinates = getCityCoordinates(city, cityRecords);
-
-    if (!coordinates) {
-      return;
-    }
-
-    const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
-    addMapMarker(point, `${city} · ${cityRecords.length}次`, "city", () => selectCity(city));
-  });
-}
-
 function initNightMapInteraction() {
   if (!elements.nightMapStage || !elements.nightMapWorld) {
     return;
   }
 
   elements.nightMapStage.addEventListener("pointerdown", (event) => {
-    if (event.target.closest(".globe-pin")) {
+    if (event.target.closest(".globe-pin") || event.target.closest(".night-map-controls")) {
       return;
     }
 
     nightMapView.dragging = true;
     nightMapView.startX = event.clientX;
     nightMapView.startY = event.clientY;
-    nightMapView.startCenterLng = nightMapView.centerLng;
-    nightMapView.startCenterLat = nightMapView.centerLat;
+    nightMapView.startOffsetX = nightMapView.offsetX;
+    nightMapView.startOffsetY = nightMapView.offsetY;
     elements.nightMapStage.classList.add("is-dragging");
     elements.nightMapStage.setPointerCapture(event.pointerId);
   });
@@ -866,10 +855,9 @@ function initNightMapInteraction() {
 
     const deltaX = event.clientX - nightMapView.startX;
     const deltaY = event.clientY - nightMapView.startY;
-    nightMapView.centerLng = Math.max(68, Math.min(140, nightMapView.startCenterLng - deltaX * 0.18));
-    nightMapView.centerLat = Math.max(18, Math.min(52, nightMapView.startCenterLat + deltaY * 0.11));
+    nightMapView.offsetX = nightMapView.startOffsetX + deltaX;
+    nightMapView.offsetY = nightMapView.startOffsetY + deltaY;
     updateNightMapView();
-    positionGlobePins();
   });
 
   const endDrag = (event) => {
@@ -887,27 +875,52 @@ function initNightMapInteraction() {
 
   elements.nightMapStage.addEventListener("pointerup", endDrag);
   elements.nightMapStage.addEventListener("pointercancel", endDrag);
+  elements.nightMapStage.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    zoomNightMap(event.deltaY < 0 ? 0.14 : -0.14);
+  });
+  elements.nightZoomIn?.addEventListener("click", () => zoomNightMap(0.18));
+  elements.nightZoomOut?.addEventListener("click", () => zoomNightMap(-0.18));
+  elements.nightReset?.addEventListener("click", resetNightMap);
+  updateNightMapView();
 }
 
-function projectCityToGlobe(coordinates) {
-  const toRadians = Math.PI / 180;
-  const lambda = (coordinates.lng - nightMapView.centerLng) * toRadians;
-  const phi = coordinates.lat * toRadians;
-  const phi0 = nightMapView.centerLat * toRadians;
-  const visible =
-    Math.sin(phi0) * Math.sin(phi) +
-    Math.cos(phi0) * Math.cos(phi) * Math.cos(lambda);
-  const scale = 38;
-  const x = 50 + scale * Math.cos(phi) * Math.sin(lambda);
-  const y =
-    50 -
-    scale *
-      (Math.cos(phi0) * Math.sin(phi) - Math.sin(phi0) * Math.cos(phi) * Math.cos(lambda));
+const cityImagePositions = {
+  北京: { x: 59.4, y: 42.6 },
+  北京市: { x: 59.4, y: 42.6 },
+  成都: { x: 43.0, y: 58.2 },
+  成都市: { x: 43.0, y: 58.2 },
+  上海: { x: 63.5, y: 63.0 },
+  上海市: { x: 63.5, y: 63.0 },
+  广州: { x: 55.5, y: 75.0 },
+  广州市: { x: 55.5, y: 75.0 },
+  深圳: { x: 56.5, y: 76.2 },
+  深圳市: { x: 56.5, y: 76.2 },
+  杭州: { x: 62.0, y: 65.0 },
+  杭州市: { x: 62.0, y: 65.0 },
+  重庆: { x: 47.3, y: 61.6 },
+  重庆市: { x: 47.3, y: 61.6 },
+  西安: { x: 47.7, y: 51.7 },
+  西安市: { x: 47.7, y: 51.7 },
+  南京: { x: 61.2, y: 59.8 },
+  南京市: { x: 61.2, y: 59.8 },
+  武汉: { x: 55.3, y: 62.8 },
+  武汉市: { x: 55.3, y: 62.8 }
+};
 
+function projectCityToGlobe(coordinates, city) {
+  const normalizedCity = city.trim().replace(/市$/, "");
+  const calibrated = cityImagePositions[city] ?? cityImagePositions[normalizedCity];
+
+  if (calibrated) {
+    return calibrated;
+  }
+
+  const x = -72.16 + coordinates.lng * 1.1108 + coordinates.lat * 0.0844;
+  const y = 116.49 + coordinates.lng * 0.0896 - coordinates.lat * 2.1508;
   return {
     x: Math.min(91, Math.max(9, x)),
-    y: Math.min(91, Math.max(9, y)),
-    visible
+    y: Math.min(90, Math.max(10, y))
   };
 }
 
@@ -921,16 +934,12 @@ function renderGlobePins(groups) {
       return;
     }
 
-    const position = projectCityToGlobe(coordinates);
+    const position = projectCityToGlobe(coordinates, city);
     const button = document.createElement("button");
     button.className = "globe-pin";
     button.type = "button";
-    button.dataset.lat = coordinates.lat;
-    button.dataset.lng = coordinates.lng;
     button.style.left = `${position.x}%`;
     button.style.top = `${position.y}%`;
-    button.hidden = position.visible <= -0.08;
-    button.style.opacity = String(Math.max(0.25, Math.min(1, position.visible + 0.22)));
     button.innerHTML = `<span class="pin-dot"></span><span class="pin-label"><strong>${city}</strong><small>${cityRecords.length}次</small></span>`;
     button.addEventListener("click", () => selectCity(city));
     elements.globePins.append(button);
@@ -942,28 +951,21 @@ function updateNightMapView() {
     return;
   }
 
-  const rotateX = (nightMapView.centerLat - 34.8) * -0.18;
-  const rotateY = (nightMapView.centerLng - 104.2) * -0.2;
-  const textureX = 50 + (nightMapView.centerLng - 104.2) * 0.85;
-  const textureY = 50 - (nightMapView.centerLat - 34.8) * 0.55;
-  elements.nightMapWorld.style.setProperty("--earth-rotate-x", `${rotateX}deg`);
-  elements.nightMapWorld.style.setProperty("--earth-rotate-y", `${rotateY}deg`);
-  elements.nightMapWorld.style.setProperty("--earth-texture-x", `${textureX}%`);
-  elements.nightMapWorld.style.setProperty("--earth-texture-y", `${textureY}%`);
+  elements.nightMapWorld.style.setProperty("--night-map-x", `${nightMapView.offsetX}px`);
+  elements.nightMapWorld.style.setProperty("--night-map-y", `${nightMapView.offsetY}px`);
+  elements.nightMapWorld.style.setProperty("--night-map-scale", String(nightMapView.scale));
 }
 
-function positionGlobePins() {
-  elements.globePins.querySelectorAll(".globe-pin").forEach((button) => {
-    const coordinates = {
-      lat: Number(button.dataset.lat),
-      lng: Number(button.dataset.lng)
-    };
-    const position = projectCityToGlobe(coordinates);
-    button.style.left = `${position.x}%`;
-    button.style.top = `${position.y}%`;
-    button.hidden = position.visible <= -0.08;
-    button.style.opacity = String(Math.max(0.25, Math.min(1, position.visible + 0.22)));
-  });
+function zoomNightMap(delta) {
+  nightMapView.scale = Math.max(1, Math.min(2.4, nightMapView.scale + delta));
+  updateNightMapView();
+}
+
+function resetNightMap() {
+  nightMapView.scale = 1;
+  nightMapView.offsetX = 0;
+  nightMapView.offsetY = 0;
+  updateNightMapView();
 }
 
 function renderPlaceMarkers(cityRecords) {
