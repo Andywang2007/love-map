@@ -36,19 +36,27 @@
             </div>
             <div class="toolbar-actions">
               <button class="ghost-button" id="show-country" type="button">全国</button>
-              <button class="ghost-button" id="export-records" type="button">导出记录</button>
-              <button class="ghost-button" id="import-records" type="button">导入记录</button>
               <button class="primary-button" id="open-form" type="button">
                 <span aria-hidden="true">+</span>
                 新增记录
               </button>
             </div>
-            <input id="import-file" accept="application/json" hidden type="file" />
           </div>
           <p class="sync-status" id="sync-status">本地模式</p>
 
           <div class="map-canvas" id="map-canvas">
             <div class="map-loading" id="map-loading">正在加载地图...</div>
+            <div class="country-globe" id="country-globe" aria-label="夜间地球全国视图" hidden>
+              <div class="star-field"></div>
+              <div class="globe-shell">
+                <div class="globe-core"></div>
+                <div class="globe-pins" id="globe-pins"></div>
+              </div>
+              <div class="globe-caption">
+                <span>Night Earth</span>
+                <strong>点亮你们见过面的城市</strong>
+              </div>
+            </div>
             <div class="marker-layer" id="marker-layer"></div>
           </div>
         </section>

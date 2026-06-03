@@ -99,6 +99,8 @@ const mapEnabled = Boolean(config.baiduAk);
 const elements = {
   mapCanvas: document.querySelector("#map-canvas"),
   mapLoading: document.querySelector("#map-loading"),
+  countryGlobe: document.querySelector("#country-globe"),
+  globePins: document.querySelector("#globe-pins"),
   markerLayer: document.querySelector("#marker-layer"),
   timeline: document.querySelector("#timeline"),
   photoGrid: document.querySelector("#photo-grid"),
@@ -125,9 +127,6 @@ const elements = {
   placesList: document.querySelector("#places-list"),
   addPlace: document.querySelector("#add-place"),
   showCountry: document.querySelector("#show-country"),
-  exportRecords: document.querySelector("#export-records"),
-  importRecords: document.querySelector("#import-records"),
-  importFile: document.querySelector("#import-file"),
   closeForm: document.querySelector("#close-form"),
   cancelForm: document.querySelector("#cancel-form"),
   resetDemo: document.querySelector("#reset-demo"),
@@ -793,6 +792,7 @@ function render() {
 
 function renderMarkers(groups) {
   elements.markerLayer.innerHTML = "";
+  elements.globePins.innerHTML = "";
   clearMapOverlays();
 
   if (!mapState.ready) {
@@ -800,10 +800,28 @@ function renderMarkers(groups) {
   }
 
   if (activeCity && groups.has(activeCity)) {
+    elements.countryGlobe.hidden = true;
     renderPlaceMarkers(groups.get(activeCity));
     return;
   }
 
+  elements.countryGlobe.hidden = false;
+  renderGlobePins(groups);
+}
+
+function projectCityToGlobe(coordinates) {
+  const centerLng = 104;
+  const centerLat = 34;
+  const x = 50 + ((coordinates.lng - centerLng) / 45) * 34;
+  const y = 50 - ((coordinates.lat - centerLat) / 28) * 34;
+
+  return {
+    x: Math.min(82, Math.max(18, x)),
+    y: Math.min(78, Math.max(18, y))
+  };
+}
+
+function renderGlobePins(groups) {
   [...groups.entries()].forEach(([city, cityRecords]) => {
     const coordinates = getCityCoordinates(city, cityRecords);
 
@@ -811,8 +829,15 @@ function renderMarkers(groups) {
       return;
     }
 
-    const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
-    addMapMarker(point, `${city} · ${cityRecords.length}次`, "city", () => selectCity(city));
+    const position = projectCityToGlobe(coordinates);
+    const button = document.createElement("button");
+    button.className = "globe-pin";
+    button.type = "button";
+    button.style.left = `${position.x}%`;
+    button.style.top = `${position.y}%`;
+    button.innerHTML = `<span>${city}</span><small>${cityRecords.length}次</small>`;
+    button.addEventListener("click", () => selectCity(city));
+    elements.globePins.append(button);
   });
 }
 
@@ -902,7 +927,7 @@ function showCountryMap() {
     return;
   }
 
-  mapState.map.centerAndZoom(new BMapGL.Point(104.1954, 35.8617), 5);
+  mapState.map.centerAndZoom(new BMapGL.Point(104.1954, 35.8617), 4);
 }
 
 function renderTimeline(ordered) {
@@ -1532,89 +1557,6 @@ async function deleteActiveRecord() {
   render();
 }
 
-function exportRecords() {
-  const data = JSON.stringify(records, null, 2);
-  const blob = new Blob([data], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-
-  link.href = url;
-  link.download = `异地恋见面记录-${new Date().toISOString().slice(0, 10)}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function importRecords() {
-  elements.importFile.click();
-}
-
-function readImportFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => resolve(reader.result));
-    reader.addEventListener("error", reject);
-    reader.readAsText(file);
-  });
-}
-
-function isValidRecord(record) {
-  return (
-    record &&
-    typeof record.id === "string" &&
-    typeof record.city === "string" &&
-    (typeof record.placeName === "string" || record.placeName === undefined) &&
-    (Array.isArray(record.places) || record.places === undefined) &&
-    (typeof record.latitude === "number" || record.latitude === null || record.latitude === undefined) &&
-    (typeof record.longitude === "number" || record.longitude === null || record.longitude === undefined) &&
-    typeof record.startDate === "string" &&
-    typeof record.stay === "string" &&
-    (typeof record.stayLatitude === "number" || record.stayLatitude === null || record.stayLatitude === undefined) &&
-    (typeof record.stayLongitude === "number" || record.stayLongitude === null || record.stayLongitude === undefined) &&
-    (typeof record.scene === "string" || record.scene === undefined) &&
-    typeof record.note === "string" &&
-    (Array.isArray(record.dailyEvents) || record.dailyEvents === undefined) &&
-    Array.isArray(record.photos)
-  );
-}
-
-async function handleImport(event) {
-  const [file] = event.target.files;
-
-  if (!file) {
-    return;
-  }
-
-  try {
-    const imported = JSON.parse(await readImportFile(file));
-
-    if (!Array.isArray(imported) || imported.length === 0 || !imported.every(isValidRecord)) {
-      throw new Error("Invalid records file");
-    }
-
-    records = imported;
-    activeId = records[0].id;
-    activeCity = null;
-    await ensureRecordLocations(false);
-
-    if (cloudEnabled) {
-      const { error } = await cloud.from(tableName).upsert(records.map(toCloudRecord));
-
-      if (error) {
-        throw error;
-      }
-
-      await loadCloudRecords();
-    } else {
-      saveLocalRecords();
-      render();
-    }
-  } catch {
-    alert("导入失败，请选择这个网页导出的记录文件。");
-  } finally {
-    elements.importFile.value = "";
-  }
-}
-
 elements.openForm.addEventListener("click", () => openDialog());
 elements.editRecord.addEventListener("click", openEditDialog);
 elements.deleteRecord.addEventListener("click", deleteActiveRecord);
@@ -1630,9 +1572,6 @@ elements.placesList.addEventListener("input", handlePlacesListInput);
 elements.placesList.addEventListener("click", handlePlacesListClick);
 elements.addDailyEvent.addEventListener("click", () => addDailyEventRow());
 elements.dailyEventsList.addEventListener("click", handleDailyEventsListClick);
-elements.exportRecords.addEventListener("click", exportRecords);
-elements.importRecords.addEventListener("click", importRecords);
-elements.importFile.addEventListener("change", handleImport);
 elements.closeForm.addEventListener("click", closeDialog);
 elements.cancelForm.addEventListener("click", closeDialog);
 elements.resetDemo.addEventListener("click", resetDemoRecords);
