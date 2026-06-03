@@ -814,14 +814,16 @@ function renderMarkers(groups) {
 }
 
 function projectCityToGlobe(coordinates) {
-  const centerLng = 104;
-  const centerLat = 34;
-  const x = 50 + ((coordinates.lng - centerLng) / 45) * 34;
-  const y = 50 - ((coordinates.lat - centerLat) / 28) * 34;
+  const minLng = 73.5;
+  const maxLng = 135.5;
+  const minLat = 18;
+  const maxLat = 54;
+  const x = 8 + ((coordinates.lng - minLng) / (maxLng - minLng)) * 78;
+  const y = 12 + ((maxLat - coordinates.lat) / (maxLat - minLat)) * 70;
 
   return {
-    x: Math.min(82, Math.max(18, x)),
-    y: Math.min(78, Math.max(18, y))
+    x: Math.min(90, Math.max(7, x)),
+    y: Math.min(88, Math.max(10, y))
   };
 }
 
@@ -839,7 +841,7 @@ function renderGlobePins(groups) {
     button.type = "button";
     button.style.left = `${position.x}%`;
     button.style.top = `${position.y}%`;
-    button.innerHTML = `<span>${city}</span><small>${cityRecords.length}次</small>`;
+    button.innerHTML = `<span class="pin-dot"></span><span class="pin-label"><strong>${city}</strong><small>${cityRecords.length}次</small></span>`;
     button.addEventListener("click", () => selectCity(city));
     elements.globePins.append(button);
   });
