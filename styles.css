@@ -319,11 +319,20 @@ h2 {
 
 .night-map-world {
   position: absolute;
-  inset: 0;
-  transform: rotateY(var(--night-map-rotation, 0deg));
+  left: 50%;
+  top: 50%;
+  width: min(72%, 620px);
+  aspect-ratio: 1;
+  overflow: visible;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) rotateX(var(--earth-rotate-x, 0deg)) rotateY(var(--earth-rotate-y, 0deg));
   transform-origin: center;
   transform-style: preserve-3d;
   transition: transform 180ms ease;
+  box-shadow:
+    0 0 0 1px rgba(161, 197, 243, 0.28),
+    0 0 50px rgba(73, 140, 225, 0.34),
+    0 42px 90px rgba(0, 0, 0, 0.56);
 }
 
 .night-map-stage.is-dragging .night-map-world {
@@ -335,17 +344,21 @@ h2 {
   inset: 0;
   width: 100%;
   height: 100%;
+  border-radius: 50%;
   object-fit: cover;
-  filter: saturate(1.05) contrast(1.08) brightness(0.9);
+  object-position: var(--earth-texture-x, 50%) var(--earth-texture-y, 50%);
+  filter: saturate(1.08) contrast(1.1) brightness(0.86);
 }
 
 .night-map-vignette {
   position: absolute;
   inset: 0;
   z-index: 1;
+  border-radius: 50%;
   background:
-    radial-gradient(circle at 50% 48%, transparent 0 42%, rgba(1, 5, 12, 0.28) 70%, rgba(1, 5, 12, 0.72) 100%),
-    linear-gradient(180deg, rgba(1, 5, 12, 0.18), transparent 22%, rgba(1, 5, 12, 0.34));
+    radial-gradient(circle at 35% 26%, rgba(204, 227, 255, 0.2), transparent 20%),
+    radial-gradient(circle at 50% 48%, transparent 0 38%, rgba(1, 5, 12, 0.3) 66%, rgba(0, 0, 0, 0.82) 100%),
+    linear-gradient(112deg, rgba(255, 255, 255, 0.1), transparent 42%, rgba(0, 0, 0, 0.62) 80%);
   pointer-events: none;
 }
 
@@ -353,6 +366,7 @@ h2 {
   position: absolute;
   inset: 0;
   z-index: 6;
+  border-radius: 50%;
 }
 
 .globe-pin {
@@ -371,6 +385,10 @@ h2 {
   font-size: 0.78rem;
   line-height: 1.15;
   text-align: left;
+  transition:
+    left 120ms linear,
+    top 120ms linear,
+    opacity 120ms linear;
 }
 
 .pin-dot {

@@ -161,8 +161,11 @@ let selectedStay = null;
 let nightMapView = {
   dragging: false,
   startX: 0,
-  rotation: 0,
-  startRotation: 0
+  startY: 0,
+  centerLng: 104.2,
+  centerLat: 34.8,
+  startCenterLng: 104.2,
+  startCenterLat: 34.8
 };
 
 init();
@@ -834,7 +837,9 @@ function initNightMapInteraction() {
 
     nightMapView.dragging = true;
     nightMapView.startX = event.clientX;
-    nightMapView.startRotation = nightMapView.rotation;
+    nightMapView.startY = event.clientY;
+    nightMapView.startCenterLng = nightMapView.centerLng;
+    nightMapView.startCenterLat = nightMapView.centerLat;
     elements.nightMapStage.classList.add("is-dragging");
     elements.nightMapStage.setPointerCapture(event.pointerId);
   });
@@ -845,8 +850,11 @@ function initNightMapInteraction() {
     }
 
     const deltaX = event.clientX - nightMapView.startX;
-    nightMapView.rotation = Math.max(-10, Math.min(10, nightMapView.startRotation + deltaX * 0.035));
-    elements.nightMapWorld.style.setProperty("--night-map-rotation", `${nightMapView.rotation}deg`);
+    const deltaY = event.clientY - nightMapView.startY;
+    nightMapView.centerLng = Math.max(68, Math.min(140, nightMapView.startCenterLng - deltaX * 0.18));
+    nightMapView.centerLat = Math.max(18, Math.min(52, nightMapView.startCenterLat + deltaY * 0.11));
+    updateNightMapView();
+    positionGlobePins();
   });
 
   const endDrag = (event) => {
@@ -867,16 +875,30 @@ function initNightMapInteraction() {
 }
 
 function projectCityToGlobe(coordinates) {
-  const x = -72.16 + coordinates.lng * 1.1108 + coordinates.lat * 0.0844;
-  const y = 116.49 + coordinates.lng * 0.0896 - coordinates.lat * 2.1508;
+  const toRadians = Math.PI / 180;
+  const lambda = (coordinates.lng - nightMapView.centerLng) * toRadians;
+  const phi = coordinates.lat * toRadians;
+  const phi0 = nightMapView.centerLat * toRadians;
+  const visible =
+    Math.sin(phi0) * Math.sin(phi) +
+    Math.cos(phi0) * Math.cos(phi) * Math.cos(lambda);
+  const scale = 38;
+  const x = 50 + scale * Math.cos(phi) * Math.sin(lambda);
+  const y =
+    50 -
+    scale *
+      (Math.cos(phi0) * Math.sin(phi) - Math.sin(phi0) * Math.cos(phi) * Math.cos(lambda));
 
   return {
-    x: Math.min(90, Math.max(7, x)),
-    y: Math.min(88, Math.max(10, y))
+    x: Math.min(91, Math.max(9, x)),
+    y: Math.min(91, Math.max(9, y)),
+    visible
   };
 }
 
 function renderGlobePins(groups) {
+  updateNightMapView();
+
   [...groups.entries()].forEach(([city, cityRecords]) => {
     const coordinates = getCityCoordinates(city, cityRecords);
 
@@ -888,11 +910,44 @@ function renderGlobePins(groups) {
     const button = document.createElement("button");
     button.className = "globe-pin";
     button.type = "button";
+    button.dataset.lat = coordinates.lat;
+    button.dataset.lng = coordinates.lng;
     button.style.left = `${position.x}%`;
     button.style.top = `${position.y}%`;
+    button.hidden = position.visible <= -0.08;
+    button.style.opacity = String(Math.max(0.25, Math.min(1, position.visible + 0.22)));
     button.innerHTML = `<span class="pin-dot"></span><span class="pin-label"><strong>${city}</strong><small>${cityRecords.length}次</small></span>`;
     button.addEventListener("click", () => selectCity(city));
     elements.globePins.append(button);
+  });
+}
+
+function updateNightMapView() {
+  if (!elements.nightMapWorld) {
+    return;
+  }
+
+  const rotateX = (nightMapView.centerLat - 34.8) * -0.18;
+  const rotateY = (nightMapView.centerLng - 104.2) * -0.2;
+  const textureX = 50 + (nightMapView.centerLng - 104.2) * 0.85;
+  const textureY = 50 - (nightMapView.centerLat - 34.8) * 0.55;
+  elements.nightMapWorld.style.setProperty("--earth-rotate-x", `${rotateX}deg`);
+  elements.nightMapWorld.style.setProperty("--earth-rotate-y", `${rotateY}deg`);
+  elements.nightMapWorld.style.setProperty("--earth-texture-x", `${textureX}%`);
+  elements.nightMapWorld.style.setProperty("--earth-texture-y", `${textureY}%`);
+}
+
+function positionGlobePins() {
+  elements.globePins.querySelectorAll(".globe-pin").forEach((button) => {
+    const coordinates = {
+      lat: Number(button.dataset.lat),
+      lng: Number(button.dataset.lng)
+    };
+    const position = projectCityToGlobe(coordinates);
+    button.style.left = `${position.x}%`;
+    button.style.top = `${position.y}%`;
+    button.hidden = position.visible <= -0.08;
+    button.style.opacity = String(Math.max(0.25, Math.min(1, position.visible + 0.22)));
   });
 }
 
