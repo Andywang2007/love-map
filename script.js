@@ -748,12 +748,24 @@ function addMapMarker(point, labelText, type, onClick) {
   const marker = new BMapGL.Marker(point);
   const offset = type === "city" ? new BMapGL.Size(18, -28) : new BMapGL.Size(16, -24);
   const label = new BMapGL.Label(labelText, { offset });
+  const borderColor =
+    type === "stay"
+      ? "rgba(120, 184, 255, 0.54)"
+      : type === "city"
+        ? "rgba(224, 191, 115, 0.46)"
+        : "rgba(224, 191, 115, 0.35)";
+  const backgroundColor =
+    type === "stay"
+      ? "rgba(20, 42, 66, 0.88)"
+      : type === "city"
+        ? "rgba(31, 24, 16, 0.88)"
+        : "rgba(12, 18, 28, 0.84)";
 
   label.setStyle({
-    border: type === "stay" ? "1px solid rgba(120, 184, 255, 0.42)" : "1px solid rgba(224, 191, 115, 0.35)",
+    border: `1px solid ${borderColor}`,
     borderRadius: "999px",
     color: "#f8ead1",
-    backgroundColor: "rgba(12, 18, 28, 0.84)",
+    backgroundColor,
     boxShadow: "0 10px 24px rgba(0, 0, 0, 0.32)",
     padding: "4px 8px",
     fontSize: "12px",
@@ -766,6 +778,56 @@ function addMapMarker(point, labelText, type, onClick) {
   mapState.map.addOverlay(marker);
   mapState.overlays.push(marker);
   return marker;
+}
+
+function getRecordRoutePoints(record) {
+  const points = [];
+  const stayCoordinates = getStayCoordinates(record);
+
+  if (stayCoordinates) {
+    points.push(new BMapGL.Point(stayCoordinates.lng, stayCoordinates.lat));
+  }
+
+  getRecordPlaces(record).forEach((place) => {
+    if (Number.isFinite(place.latitude) && Number.isFinite(place.longitude)) {
+      points.push(new BMapGL.Point(place.longitude, place.latitude));
+    }
+  });
+
+  return points.filter((point, index, list) => {
+    const previous = list[index - 1];
+    return !previous || previous.lng !== point.lng || previous.lat !== point.lat;
+  });
+}
+
+function drawRouteLine(points, routeIndex) {
+  if (!mapState.ready || points.length < 2 || !BMapGL.Polyline) {
+    return;
+  }
+
+  const palette = ["#e0bf73", "#79a7d8", "#d66a7a"];
+  const routeColor = palette[routeIndex % palette.length];
+  const lines = [
+    new BMapGL.Polyline(points, {
+      strokeColor: routeColor,
+      strokeOpacity: 0.2,
+      strokeWeight: 10
+    }),
+    new BMapGL.Polyline(points, {
+      strokeColor: routeColor,
+      strokeOpacity: 0.95,
+      strokeWeight: 3
+    })
+  ];
+
+  lines.forEach((line) => {
+    mapState.map.addOverlay(line);
+    mapState.overlays.push(line);
+  });
+}
+
+function getCityRoutePoints(cityRecords) {
+  return cityRecords.flatMap(getRecordRoutePoints);
 }
 
 function render() {
@@ -817,6 +879,10 @@ function renderMarkers(groups) {
 }
 
 function renderPlaceMarkers(cityRecords) {
+  cityRecords.forEach((record, index) => {
+    drawRouteLine(getRecordRoutePoints(record), index);
+  });
+
   cityRecords.forEach((record) => {
     const stayCoordinates = getStayCoordinates(record);
 
@@ -892,6 +958,27 @@ function focusMapOnCity(city, shouldZoom = true) {
   const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
   const targetZoom = shouldZoom ? Math.max(mapState.map.getZoom(), 11) : Math.max(mapState.map.getZoom(), 5);
   mapState.map.centerAndZoom(point, targetZoom);
+}
+
+function focusMapOnCityRoute(cityRecords) {
+  if (!mapState.ready || cityRecords.length === 0) {
+    return;
+  }
+
+  const points = getCityRoutePoints(cityRecords);
+
+  if (points.length > 1 && mapState.map.setViewport) {
+    try {
+      mapState.map.setViewport(points, {
+        margins: [72, 72, 72, 72]
+      });
+      return;
+    } catch {
+      // Fall back to city-level focus below.
+    }
+  }
+
+  focusMapOnCity(cityRecords[0].city);
 }
 
 function showCountryMap() {
@@ -976,16 +1063,34 @@ function renderDailyEvents(record) {
     return;
   }
 
-  events.map(normalizeDailyEvent).forEach((event) => {
-    const item = document.createElement("article");
-    const date = document.createElement("strong");
-    const text = document.createElement("p");
-    item.className = "daily-event";
-    date.textContent = event.date ? formatDate(event.date) : "某一天";
-    text.textContent = event.text;
-    item.append(date, text);
-    elements.dailyEvents.append(item);
-  });
+  const dayNumbers = new Map();
+  let dayCount = 0;
+
+  events
+    .map(normalizeDailyEvent)
+    .filter((event) => event.text)
+    .sort((a, b) => (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99"))
+    .forEach((event) => {
+      if (event.date && !dayNumbers.has(event.date)) {
+        dayCount += 1;
+        dayNumbers.set(event.date, dayCount);
+      }
+
+      const item = document.createElement("article");
+      const head = document.createElement("div");
+      const day = document.createElement("span");
+      const date = document.createElement("strong");
+      const text = document.createElement("p");
+      item.className = "daily-event";
+      head.className = "daily-event-head";
+      day.className = "daily-event-day";
+      day.textContent = event.date ? `DAY ${String(dayNumbers.get(event.date)).padStart(2, "0")}` : "DAY --";
+      date.textContent = event.date ? formatDate(event.date) : "某一天";
+      text.textContent = event.text;
+      head.append(day, date);
+      item.append(head, text);
+      elements.dailyEvents.append(item);
+    });
 }
 
 function selectRecord(id, focusCoordinates = null) {
@@ -1006,7 +1111,7 @@ function selectCity(city) {
   activeCity = city;
   activeId = cityRecords[0]?.id ?? null;
   render();
-  focusMapOnCity(city);
+  focusMapOnCityRoute(cityRecords);
 }
 
 function createPlaceRow(place = {}) {

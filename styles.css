@@ -233,9 +233,23 @@ h2 {
   min-height: 520px;
   margin-top: 16px;
   overflow: hidden;
-  border: 1px solid rgba(231, 221, 215, 0.48);
+  border: 1px solid rgba(224, 191, 115, 0.3);
   border-radius: 8px;
   background: #101722;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 26px 70px rgba(0, 0, 0, 0.32);
+}
+
+.map-canvas::after {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  content: "";
+  background:
+    linear-gradient(180deg, rgba(8, 12, 19, 0.1), rgba(8, 12, 19, 0.22)),
+    radial-gradient(circle at 50% 50%, transparent 58%, rgba(7, 10, 16, 0.24));
 }
 
 .map-canvas :is(.BMap_cpyCtrl, .anchorBL) {
@@ -374,23 +388,38 @@ h2 {
 
 .daily-events {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .daily-event,
 .daily-empty {
   margin: 0;
-  padding: 10px 12px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.035));
+}
+
+.daily-event-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 6px;
+}
+
+.daily-event-day {
+  padding: 3px 7px;
+  border: 1px solid rgba(224, 191, 115, 0.32);
+  border-radius: 999px;
+  color: var(--gold);
+  background: rgba(224, 191, 115, 0.08);
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 .daily-event strong {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--gold);
-  font-size: 0.86rem;
+  color: #f2dfb5;
+  font-size: 0.9rem;
 }
 
 .daily-event p {
