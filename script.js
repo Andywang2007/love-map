@@ -814,7 +814,9 @@ function renderMarkers(groups) {
   elements.countryGlobe.hidden = shouldShowCityMap;
 
   if (!shouldShowCityMap) {
-    renderGlobePins(groups);
+    if (mapState.ready) {
+      renderCityMarkers(groups);
+    }
     return;
   }
 
@@ -823,6 +825,19 @@ function renderMarkers(groups) {
   }
 
   renderPlaceMarkers(groups.get(activeCity));
+}
+
+function renderCityMarkers(groups) {
+  [...groups.entries()].forEach(([city, cityRecords]) => {
+    const coordinates = getCityCoordinates(city, cityRecords);
+
+    if (!coordinates) {
+      return;
+    }
+
+    const point = new BMapGL.Point(coordinates.lng, coordinates.lat);
+    addMapMarker(point, `${city} · ${cityRecords.length}次`, "city", () => selectCity(city));
+  });
 }
 
 function initNightMapInteraction() {

@@ -245,21 +245,21 @@ h2 {
 }
 
 .map-canvas.country-mode .baidu-map {
-  opacity: 0;
-  pointer-events: none;
+  filter: saturate(0.8) brightness(0.72) contrast(1.18);
 }
 
 .country-globe {
   position: absolute;
   inset: 0;
-  z-index: 5;
+  z-index: 2;
   display: block;
   overflow: hidden;
   padding: 28px;
+  pointer-events: none;
   background:
-    radial-gradient(circle at 22% 16%, rgba(224, 191, 115, 0.12), transparent 22%),
-    radial-gradient(circle at 76% 28%, rgba(75, 138, 218, 0.16), transparent 28%),
-    linear-gradient(135deg, #02050c, #08111f 52%, #02050c);
+    radial-gradient(circle at 22% 16%, rgba(224, 191, 115, 0.08), transparent 22%),
+    radial-gradient(circle at 76% 28%, rgba(75, 138, 218, 0.12), transparent 28%),
+    linear-gradient(135deg, rgba(2, 5, 12, 0.2), rgba(8, 17, 31, 0.12) 52%, rgba(2, 5, 12, 0.2));
 }
 
 .country-globe[hidden] {
@@ -298,45 +298,19 @@ h2 {
 }
 
 .night-map-stage {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 28px;
   overflow: hidden;
-  border: 1px solid rgba(210, 224, 250, 0.18);
+  border: 1px solid rgba(210, 224, 250, 0.08);
   border-radius: 8px;
-  background: #050a12;
-  box-shadow:
-    inset 0 0 80px rgba(0, 0, 0, 0.58),
-    0 30px 80px rgba(0, 0, 0, 0.38);
-  cursor: grab;
-  perspective: 1100px;
-  touch-action: none;
-}
-
-.night-map-stage.is-dragging {
-  cursor: grabbing;
+  background: transparent;
+  opacity: 0.28;
+  mix-blend-mode: screen;
 }
 
 .night-map-world {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(72%, 620px);
-  aspect-ratio: 1;
-  overflow: visible;
-  border-radius: 50%;
-  transform: translate(-50%, -50%) rotateX(var(--earth-rotate-x, 0deg)) rotateY(var(--earth-rotate-y, 0deg));
-  transform-origin: center;
-  transform-style: preserve-3d;
-  transition: transform 180ms ease;
-  box-shadow:
-    0 0 0 1px rgba(161, 197, 243, 0.28),
-    0 0 50px rgba(73, 140, 225, 0.34),
-    0 42px 90px rgba(0, 0, 0, 0.56);
-}
-
-.night-map-stage.is-dragging .night-map-world {
-  transition: none;
+  inset: 0;
 }
 
 .night-map-image {
@@ -344,9 +318,9 @@ h2 {
   inset: 0;
   width: 100%;
   height: 100%;
-  border-radius: 50%;
+  border-radius: 8px;
   object-fit: cover;
-  object-position: var(--earth-texture-x, 50%) var(--earth-texture-y, 50%);
+  object-position: 50% 50%;
   filter: saturate(1.08) contrast(1.1) brightness(0.86);
 }
 
@@ -354,11 +328,10 @@ h2 {
   position: absolute;
   inset: 0;
   z-index: 1;
-  border-radius: 50%;
+  border-radius: 8px;
   background:
-    radial-gradient(circle at 35% 26%, rgba(204, 227, 255, 0.2), transparent 20%),
-    radial-gradient(circle at 50% 48%, transparent 0 38%, rgba(1, 5, 12, 0.3) 66%, rgba(0, 0, 0, 0.82) 100%),
-    linear-gradient(112deg, rgba(255, 255, 255, 0.1), transparent 42%, rgba(0, 0, 0, 0.62) 80%);
+    radial-gradient(circle at 50% 48%, transparent 0 42%, rgba(1, 5, 12, 0.28) 70%, rgba(1, 5, 12, 0.72) 100%),
+    linear-gradient(180deg, rgba(1, 5, 12, 0.18), transparent 22%, rgba(1, 5, 12, 0.34));
   pointer-events: none;
 }
 
