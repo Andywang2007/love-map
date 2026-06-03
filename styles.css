@@ -449,6 +449,12 @@ h2 {
   color: var(--ink);
 }
 
+.globe-caption a {
+  color: rgba(231, 221, 215, 0.56);
+  font-size: 0.66rem;
+  text-decoration: none;
+}
+
 .map-canvas :is(.BMap_cpyCtrl, .anchorBL) {
   display: none;
 }

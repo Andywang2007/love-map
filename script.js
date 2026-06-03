@@ -858,20 +858,21 @@ function initEarthGlobe() {
   group.rotation.y = earthState.rotationY;
   scene.add(group);
 
-  const texture = new THREE.CanvasTexture(createEarthTexture());
-  texture.anisotropy = 8;
+  const texture = createFallbackEarthTexture();
 
+  const earthMaterial = new THREE.MeshPhongMaterial({
+    map: texture,
+    emissive: 0x0b1b2d,
+    emissiveMap: texture,
+    emissiveIntensity: 0.75,
+    shininess: 8
+  });
   const earth = new THREE.Mesh(
     new THREE.SphereGeometry(2, 96, 96),
-    new THREE.MeshPhongMaterial({
-      map: texture,
-      emissive: 0x0b1b2d,
-      emissiveMap: texture,
-      emissiveIntensity: 0.55,
-      shininess: 10
-    })
+    earthMaterial
   );
   group.add(earth);
+  loadEarthNightTexture(earthMaterial, renderer);
 
   const atmosphere = new THREE.Mesh(
     new THREE.SphereGeometry(2.08, 96, 96),
@@ -885,7 +886,6 @@ function initEarthGlobe() {
   );
   group.add(atmosphere);
 
-  group.add(createEarthLights());
   scene.add(new THREE.AmbientLight(0x8fb9ff, 0.5));
 
   const rimLight = new THREE.DirectionalLight(0xb7d4ff, 1.3);
@@ -899,7 +899,7 @@ function initEarthGlobe() {
   animateEarthGlobe();
 }
 
-function createEarthTexture() {
+function createFallbackEarthTexture() {
   const canvas = document.createElement("canvas");
   canvas.width = 2048;
   canvas.height = 1024;
@@ -954,7 +954,30 @@ function createEarthTexture() {
     context.stroke();
   }
   context.globalAlpha = 1;
-  return canvas;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.anisotropy = 8;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.offset.x = 0.539;
+  return texture;
+}
+
+function loadEarthNightTexture(material, renderer) {
+  const loader = new THREE.TextureLoader();
+  loader.setCrossOrigin("anonymous");
+  loader.load(
+    "https://upload.wikimedia.org/wikipedia/commons/2/2f/Solarsystemscope_texture_2k_earth_nightmap.jpg",
+    (texture) => {
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.offset.x = 0.539;
+      texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+      if (THREE.sRGBEncoding) {
+        texture.encoding = THREE.sRGBEncoding;
+      }
+      material.map = texture;
+      material.emissiveMap = texture;
+      material.needsUpdate = true;
+    }
+  );
 }
 
 function drawLandPatch(context, canvas, points) {
@@ -974,51 +997,6 @@ function drawLandPatch(context, canvas, points) {
   context.strokeStyle = "rgba(139, 172, 150, 0.24)";
   context.lineWidth = 4;
   context.stroke();
-}
-
-function createEarthLights() {
-  const centers = [
-    { lng: 116.4, lat: 39.9, count: 180, spread: 1.8 },
-    { lng: 104.1, lat: 30.7, count: 140, spread: 1.6 },
-    { lng: 121.5, lat: 31.2, count: 220, spread: 1.8 },
-    { lng: 113.3, lat: 23.1, count: 180, spread: 1.6 },
-    { lng: 114.3, lat: 30.6, count: 130, spread: 1.5 },
-    { lng: 106.5, lat: 29.5, count: 120, spread: 1.5 },
-    { lng: 108.9, lat: 34.3, count: 110, spread: 1.4 },
-    { lng: 118.8, lat: 32.1, count: 120, spread: 1.3 },
-    { lng: 120.2, lat: 30.3, count: 120, spread: 1.2 }
-  ];
-  const positions = [];
-  let seed = 42;
-  const random = () => {
-    seed = (seed * 1664525 + 1013904223) % 4294967296;
-    return seed / 4294967296;
-  };
-
-  centers.forEach((center) => {
-    for (let i = 0; i < center.count; i += 1) {
-      const angle = random() * Math.PI * 2;
-      const radius = Math.sqrt(random()) * center.spread;
-      const lat = center.lat + Math.sin(angle) * radius;
-      const lng = center.lng + Math.cos(angle) * radius * 1.25;
-      const point = latLngToVector3(lat, lng, 2.025);
-      positions.push(point.x, point.y, point.z);
-    }
-  });
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  return new THREE.Points(
-    geometry,
-    new THREE.PointsMaterial({
-      color: 0xf6cf78,
-      size: 0.024,
-      transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    })
-  );
 }
 
 function initEarthInteraction() {
