@@ -49,10 +49,12 @@
             <div class="map-loading" id="map-loading">正在加载地图...</div>
             <div class="country-globe" id="country-globe" aria-label="夜间地球全国视图" hidden>
               <div class="star-field"></div>
-              <div class="night-map-stage">
-                <img class="night-map-image" src="./assets/night-china-map.png" alt="" />
-                <div class="night-map-vignette"></div>
-                <div class="globe-pins" id="globe-pins"></div>
+              <div class="night-map-stage" id="night-map-stage" aria-label="可拖动旋转的夜间中国地图">
+                <div class="night-map-world" id="night-map-world">
+                  <img class="night-map-image" src="./assets/night-china-map.png" alt="" />
+                  <div class="night-map-vignette"></div>
+                  <div class="globe-pins" id="globe-pins"></div>
+                </div>
               </div>
               <div class="globe-caption">
                 <span>Night Earth</span>

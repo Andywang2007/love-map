@@ -101,6 +101,8 @@ const elements = {
   baiduMap: document.querySelector("#baidu-map"),
   mapLoading: document.querySelector("#map-loading"),
   countryGlobe: document.querySelector("#country-globe"),
+  nightMapStage: document.querySelector("#night-map-stage"),
+  nightMapWorld: document.querySelector("#night-map-world"),
   globePins: document.querySelector("#globe-pins"),
   markerLayer: document.querySelector("#marker-layer"),
   timeline: document.querySelector("#timeline"),
@@ -156,10 +158,17 @@ let activeCity = null;
 let editingId = null;
 let selectedCity = null;
 let selectedStay = null;
+let nightMapView = {
+  dragging: false,
+  startX: 0,
+  rotation: 0,
+  startRotation: 0
+};
 
 init();
 
 async function init() {
+  initNightMapInteraction();
   await initMap();
   setStatus(cloudEnabled ? "正在连接云端..." : "本地模式：填写 config.js 后开启云端同步");
 
@@ -813,13 +822,53 @@ function renderMarkers(groups) {
   renderPlaceMarkers(groups.get(activeCity));
 }
 
+function initNightMapInteraction() {
+  if (!elements.nightMapStage || !elements.nightMapWorld) {
+    return;
+  }
+
+  elements.nightMapStage.addEventListener("pointerdown", (event) => {
+    if (event.target.closest(".globe-pin")) {
+      return;
+    }
+
+    nightMapView.dragging = true;
+    nightMapView.startX = event.clientX;
+    nightMapView.startRotation = nightMapView.rotation;
+    elements.nightMapStage.classList.add("is-dragging");
+    elements.nightMapStage.setPointerCapture(event.pointerId);
+  });
+
+  elements.nightMapStage.addEventListener("pointermove", (event) => {
+    if (!nightMapView.dragging) {
+      return;
+    }
+
+    const deltaX = event.clientX - nightMapView.startX;
+    nightMapView.rotation = Math.max(-10, Math.min(10, nightMapView.startRotation + deltaX * 0.035));
+    elements.nightMapWorld.style.setProperty("--night-map-rotation", `${nightMapView.rotation}deg`);
+  });
+
+  const endDrag = (event) => {
+    if (!nightMapView.dragging) {
+      return;
+    }
+
+    nightMapView.dragging = false;
+    elements.nightMapStage.classList.remove("is-dragging");
+
+    if (elements.nightMapStage.hasPointerCapture(event.pointerId)) {
+      elements.nightMapStage.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  elements.nightMapStage.addEventListener("pointerup", endDrag);
+  elements.nightMapStage.addEventListener("pointercancel", endDrag);
+}
+
 function projectCityToGlobe(coordinates) {
-  const minLng = 73.5;
-  const maxLng = 135.5;
-  const minLat = 18;
-  const maxLat = 54;
-  const x = 8 + ((coordinates.lng - minLng) / (maxLng - minLng)) * 78;
-  const y = 12 + ((maxLat - coordinates.lat) / (maxLat - minLat)) * 70;
+  const x = -72.16 + coordinates.lng * 1.1108 + coordinates.lat * 0.0844;
+  const y = 116.49 + coordinates.lng * 0.0896 - coordinates.lat * 2.1508;
 
   return {
     x: Math.min(90, Math.max(7, x)),
