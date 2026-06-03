@@ -102,7 +102,7 @@ const elements = {
   mapLoading: document.querySelector("#map-loading"),
   countryGlobe: document.querySelector("#country-globe"),
   nightMapStage: document.querySelector("#night-map-stage"),
-  nightMapWorld: document.querySelector("#night-map-world"),
+  earthCanvas: document.querySelector("#earth-canvas"),
   nightZoomIn: document.querySelector("#night-zoom-in"),
   nightZoomOut: document.querySelector("#night-zoom-out"),
   nightReset: document.querySelector("#night-reset"),
@@ -161,21 +161,27 @@ let activeCity = null;
 let editingId = null;
 let selectedCity = null;
 let selectedStay = null;
-let nightMapView = {
+const earthState = {
+  renderer: null,
+  scene: null,
+  camera: null,
+  group: null,
+  animationFrame: null,
+  resizeObserver: null,
+  pinData: [],
   dragging: false,
-  startX: 0,
-  startY: 0,
-  offsetX: 0,
-  offsetY: 0,
-  startOffsetX: 0,
-  startOffsetY: 0,
-  scale: 1
+  lastX: 0,
+  lastY: 0,
+  rotationX: 0.3,
+  rotationY: 0,
+  cameraZ: 5.1
 };
 
 init();
 
 async function init() {
-  initNightMapInteraction();
+  initEarthGlobe();
+  initEarthInteraction();
   await initMap();
   setStatus(cloudEnabled ? "正在连接云端..." : "本地模式：填写 config.js 后开启云端同步");
 
@@ -818,6 +824,7 @@ function renderMarkers(groups) {
   elements.countryGlobe.hidden = shouldShowCityMap;
 
   if (!shouldShowCityMap) {
+    resizeEarthGlobe();
     renderGlobePins(groups);
     return;
   }
@@ -829,8 +836,193 @@ function renderMarkers(groups) {
   renderPlaceMarkers(groups.get(activeCity));
 }
 
-function initNightMapInteraction() {
-  if (!elements.nightMapStage || !elements.nightMapWorld) {
+function initEarthGlobe() {
+  if (!elements.earthCanvas || !window.THREE) {
+    return;
+  }
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+  camera.position.set(0, 0, earthState.cameraZ);
+
+  const renderer = new THREE.WebGLRenderer({
+    alpha: true,
+    antialias: true,
+    canvas: elements.earthCanvas
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  const group = new THREE.Group();
+  group.rotation.x = earthState.rotationX;
+  group.rotation.y = earthState.rotationY;
+  scene.add(group);
+
+  const texture = new THREE.CanvasTexture(createEarthTexture());
+  texture.anisotropy = 8;
+
+  const earth = new THREE.Mesh(
+    new THREE.SphereGeometry(2, 96, 96),
+    new THREE.MeshPhongMaterial({
+      map: texture,
+      emissive: 0x0b1b2d,
+      emissiveMap: texture,
+      emissiveIntensity: 0.55,
+      shininess: 10
+    })
+  );
+  group.add(earth);
+
+  const atmosphere = new THREE.Mesh(
+    new THREE.SphereGeometry(2.08, 96, 96),
+    new THREE.MeshBasicMaterial({
+      color: 0x6fa8ff,
+      transparent: true,
+      opacity: 0.18,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide
+    })
+  );
+  group.add(atmosphere);
+
+  group.add(createEarthLights());
+  scene.add(new THREE.AmbientLight(0x8fb9ff, 0.5));
+
+  const rimLight = new THREE.DirectionalLight(0xb7d4ff, 1.3);
+  rimLight.position.set(-3.5, 2.4, 4.5);
+  scene.add(rimLight);
+
+  Object.assign(earthState, { scene, camera, renderer, group });
+  resizeEarthGlobe();
+  earthState.resizeObserver = new ResizeObserver(resizeEarthGlobe);
+  earthState.resizeObserver.observe(elements.nightMapStage);
+  animateEarthGlobe();
+}
+
+function createEarthTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 2048;
+  canvas.height = 1024;
+  const context = canvas.getContext("2d");
+  const ocean = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+  ocean.addColorStop(0, "#071222");
+  ocean.addColorStop(0.45, "#0e223b");
+  ocean.addColorStop(1, "#030812");
+  context.fillStyle = ocean;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawLandPatch(context, canvas, [
+    [72, 22],
+    [85, 16],
+    [101, 18],
+    [118, 22],
+    [132, 32],
+    [128, 45],
+    [111, 53],
+    [91, 49],
+    [75, 38]
+  ]);
+  drawLandPatch(context, canvas, [
+    [96, 6],
+    [109, 8],
+    [121, 15],
+    [112, 23],
+    [98, 20]
+  ]);
+  drawLandPatch(context, canvas, [
+    [126, 30],
+    [142, 30],
+    [146, 45],
+    [134, 49]
+  ]);
+
+  context.globalAlpha = 0.16;
+  context.strokeStyle = "#9fb8d8";
+  context.lineWidth = 1;
+  for (let lng = -180; lng <= 180; lng += 30) {
+    const x = ((lng + 180) / 360) * canvas.width;
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.lineTo(x, canvas.height);
+    context.stroke();
+  }
+  for (let lat = -60; lat <= 60; lat += 30) {
+    const y = ((90 - lat) / 180) * canvas.height;
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(canvas.width, y);
+    context.stroke();
+  }
+  context.globalAlpha = 1;
+  return canvas;
+}
+
+function drawLandPatch(context, canvas, points) {
+  context.beginPath();
+  points.forEach(([lng, lat], index) => {
+    const x = ((lng + 180) / 360) * canvas.width;
+    const y = ((90 - lat) / 180) * canvas.height;
+    if (index === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+  });
+  context.closePath();
+  context.fillStyle = "rgba(30, 76, 63, 0.72)";
+  context.fill();
+  context.strokeStyle = "rgba(139, 172, 150, 0.24)";
+  context.lineWidth = 4;
+  context.stroke();
+}
+
+function createEarthLights() {
+  const centers = [
+    { lng: 116.4, lat: 39.9, count: 180, spread: 1.8 },
+    { lng: 104.1, lat: 30.7, count: 140, spread: 1.6 },
+    { lng: 121.5, lat: 31.2, count: 220, spread: 1.8 },
+    { lng: 113.3, lat: 23.1, count: 180, spread: 1.6 },
+    { lng: 114.3, lat: 30.6, count: 130, spread: 1.5 },
+    { lng: 106.5, lat: 29.5, count: 120, spread: 1.5 },
+    { lng: 108.9, lat: 34.3, count: 110, spread: 1.4 },
+    { lng: 118.8, lat: 32.1, count: 120, spread: 1.3 },
+    { lng: 120.2, lat: 30.3, count: 120, spread: 1.2 }
+  ];
+  const positions = [];
+  let seed = 42;
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+
+  centers.forEach((center) => {
+    for (let i = 0; i < center.count; i += 1) {
+      const angle = random() * Math.PI * 2;
+      const radius = Math.sqrt(random()) * center.spread;
+      const lat = center.lat + Math.sin(angle) * radius;
+      const lng = center.lng + Math.cos(angle) * radius * 1.25;
+      const point = latLngToVector3(lat, lng, 2.025);
+      positions.push(point.x, point.y, point.z);
+    }
+  });
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  return new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      color: 0xf6cf78,
+      size: 0.024,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  );
+}
+
+function initEarthInteraction() {
+  if (!elements.nightMapStage) {
     return;
   }
 
@@ -839,35 +1031,34 @@ function initNightMapInteraction() {
       return;
     }
 
-    nightMapView.dragging = true;
-    nightMapView.startX = event.clientX;
-    nightMapView.startY = event.clientY;
-    nightMapView.startOffsetX = nightMapView.offsetX;
-    nightMapView.startOffsetY = nightMapView.offsetY;
+    earthState.dragging = true;
+    earthState.lastX = event.clientX;
+    earthState.lastY = event.clientY;
     elements.nightMapStage.classList.add("is-dragging");
     elements.nightMapStage.setPointerCapture(event.pointerId);
   });
 
   elements.nightMapStage.addEventListener("pointermove", (event) => {
-    if (!nightMapView.dragging) {
+    if (!earthState.dragging) {
       return;
     }
 
-    const deltaX = event.clientX - nightMapView.startX;
-    const deltaY = event.clientY - nightMapView.startY;
-    nightMapView.offsetX = nightMapView.startOffsetX + deltaX;
-    nightMapView.offsetY = nightMapView.startOffsetY + deltaY;
-    updateNightMapView();
+    const deltaX = event.clientX - earthState.lastX;
+    const deltaY = event.clientY - earthState.lastY;
+    earthState.rotationY += deltaX * 0.006;
+    earthState.rotationX = Math.max(-0.65, Math.min(0.78, earthState.rotationX + deltaY * 0.004));
+    earthState.lastX = event.clientX;
+    earthState.lastY = event.clientY;
+    updateEarthTransform();
   });
 
   const endDrag = (event) => {
-    if (!nightMapView.dragging) {
+    if (!earthState.dragging) {
       return;
     }
 
-    nightMapView.dragging = false;
+    earthState.dragging = false;
     elements.nightMapStage.classList.remove("is-dragging");
-
     if (elements.nightMapStage.hasPointerCapture(event.pointerId)) {
       elements.nightMapStage.releasePointerCapture(event.pointerId);
     }
@@ -877,55 +1068,80 @@ function initNightMapInteraction() {
   elements.nightMapStage.addEventListener("pointercancel", endDrag);
   elements.nightMapStage.addEventListener("wheel", (event) => {
     event.preventDefault();
-    zoomNightMap(event.deltaY < 0 ? 0.14 : -0.14);
+    zoomEarth(event.deltaY < 0 ? -0.32 : 0.32);
   });
-  elements.nightZoomIn?.addEventListener("click", () => zoomNightMap(0.18));
-  elements.nightZoomOut?.addEventListener("click", () => zoomNightMap(-0.18));
-  elements.nightReset?.addEventListener("click", resetNightMap);
-  updateNightMapView();
+  elements.nightZoomIn?.addEventListener("click", () => zoomEarth(-0.42));
+  elements.nightZoomOut?.addEventListener("click", () => zoomEarth(0.42));
+  elements.nightReset?.addEventListener("click", resetEarthView);
 }
 
-const cityImagePositions = {
-  北京: { x: 59.4, y: 42.6 },
-  北京市: { x: 59.4, y: 42.6 },
-  成都: { x: 43.0, y: 58.2 },
-  成都市: { x: 43.0, y: 58.2 },
-  上海: { x: 63.5, y: 63.0 },
-  上海市: { x: 63.5, y: 63.0 },
-  广州: { x: 55.5, y: 75.0 },
-  广州市: { x: 55.5, y: 75.0 },
-  深圳: { x: 56.5, y: 76.2 },
-  深圳市: { x: 56.5, y: 76.2 },
-  杭州: { x: 62.0, y: 65.0 },
-  杭州市: { x: 62.0, y: 65.0 },
-  重庆: { x: 47.3, y: 61.6 },
-  重庆市: { x: 47.3, y: 61.6 },
-  西安: { x: 47.7, y: 51.7 },
-  西安市: { x: 47.7, y: 51.7 },
-  南京: { x: 61.2, y: 59.8 },
-  南京市: { x: 61.2, y: 59.8 },
-  武汉: { x: 55.3, y: 62.8 },
-  武汉市: { x: 55.3, y: 62.8 }
-};
-
-function projectCityToGlobe(coordinates, city) {
-  const normalizedCity = city.trim().replace(/市$/, "");
-  const calibrated = cityImagePositions[city] ?? cityImagePositions[normalizedCity];
-
-  if (calibrated) {
-    return calibrated;
+function resizeEarthGlobe() {
+  if (!earthState.renderer || !earthState.camera || !elements.nightMapStage) {
+    return;
   }
 
-  const x = -72.16 + coordinates.lng * 1.1108 + coordinates.lat * 0.0844;
-  const y = 116.49 + coordinates.lng * 0.0896 - coordinates.lat * 2.1508;
-  return {
-    x: Math.min(91, Math.max(9, x)),
-    y: Math.min(90, Math.max(10, y))
-  };
+  const rect = elements.nightMapStage.getBoundingClientRect();
+  const width = Math.max(1, Math.floor(rect.width));
+  const height = Math.max(1, Math.floor(rect.height));
+  earthState.renderer.setSize(width, height, false);
+  earthState.camera.aspect = width / height;
+  earthState.camera.updateProjectionMatrix();
+}
+
+function animateEarthGlobe() {
+  earthState.animationFrame = requestAnimationFrame(animateEarthGlobe);
+  if (!earthState.renderer || !earthState.scene || !earthState.camera) {
+    return;
+  }
+
+  if (!earthState.dragging && !activeCity && earthState.group) {
+    earthState.rotationY += 0.0008;
+    updateEarthTransform();
+  }
+
+  earthState.renderer.render(earthState.scene, earthState.camera);
+  updateGlobePinPositions();
+}
+
+function updateEarthTransform() {
+  if (!earthState.group) {
+    return;
+  }
+
+  earthState.group.rotation.x = earthState.rotationX;
+  earthState.group.rotation.y = earthState.rotationY;
+  earthState.camera.position.z = earthState.cameraZ;
+  earthState.camera.updateProjectionMatrix();
+}
+
+function zoomEarth(delta) {
+  earthState.cameraZ = Math.max(3.4, Math.min(6.4, earthState.cameraZ + delta));
+  updateEarthTransform();
+}
+
+function resetEarthView() {
+  earthState.rotationX = 0.3;
+  earthState.rotationY = 0;
+  earthState.cameraZ = 5.1;
+  updateEarthTransform();
+}
+
+function latLngToVector3(lat, lng, radius = 2.15) {
+  const latRad = (lat * Math.PI) / 180;
+  const lngRad = ((lng - 104.2) * Math.PI) / 180;
+  return new THREE.Vector3(
+    radius * Math.cos(latRad) * Math.sin(lngRad),
+    radius * Math.sin(latRad),
+    radius * Math.cos(latRad) * Math.cos(lngRad)
+  );
 }
 
 function renderGlobePins(groups) {
-  updateNightMapView();
+  if (!window.THREE || !earthState.group) {
+    return;
+  }
+
+  earthState.pinData = [];
 
   [...groups.entries()].forEach(([city, cityRecords]) => {
     const coordinates = getCityCoordinates(city, cityRecords);
@@ -934,38 +1150,42 @@ function renderGlobePins(groups) {
       return;
     }
 
-    const position = projectCityToGlobe(coordinates, city);
     const button = document.createElement("button");
     button.className = "globe-pin";
     button.type = "button";
-    button.style.left = `${position.x}%`;
-    button.style.top = `${position.y}%`;
     button.innerHTML = `<span class="pin-dot"></span><span class="pin-label"><strong>${city}</strong><small>${cityRecords.length}次</small></span>`;
     button.addEventListener("click", () => selectCity(city));
     elements.globePins.append(button);
+    earthState.pinData.push({
+      button,
+      point: latLngToVector3(coordinates.lat, coordinates.lng)
+    });
   });
+
+  updateGlobePinPositions();
 }
 
-function updateNightMapView() {
-  if (!elements.nightMapWorld) {
+function updateGlobePinPositions() {
+  if (!earthState.camera || !earthState.group || !elements.nightMapStage) {
     return;
   }
 
-  elements.nightMapWorld.style.setProperty("--night-map-x", `${nightMapView.offsetX}px`);
-  elements.nightMapWorld.style.setProperty("--night-map-y", `${nightMapView.offsetY}px`);
-  elements.nightMapWorld.style.setProperty("--night-map-scale", String(nightMapView.scale));
-}
+  const rect = elements.nightMapStage.getBoundingClientRect();
+  earthState.group.updateMatrixWorld();
+  earthState.pinData.forEach(({ button, point }) => {
+    const worldPoint = point.clone().applyMatrix4(earthState.group.matrixWorld);
+    const visible = worldPoint.z > -0.08;
+    button.hidden = !visible;
 
-function zoomNightMap(delta) {
-  nightMapView.scale = Math.max(1, Math.min(2.4, nightMapView.scale + delta));
-  updateNightMapView();
-}
+    if (!visible) {
+      return;
+    }
 
-function resetNightMap() {
-  nightMapView.scale = 1;
-  nightMapView.offsetX = 0;
-  nightMapView.offsetY = 0;
-  updateNightMapView();
+    const projected = worldPoint.clone().project(earthState.camera);
+    button.style.left = `${(projected.x * 0.5 + 0.5) * rect.width}px`;
+    button.style.top = `${(-projected.y * 0.5 + 0.5) * rect.height}px`;
+    button.style.opacity = String(Math.max(0.45, Math.min(1, worldPoint.z / 2.1)));
+  });
 }
 
 function renderPlaceMarkers(cityRecords) {
