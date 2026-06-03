@@ -102,7 +102,7 @@ const elements = {
   mapLoading: document.querySelector("#map-loading"),
   countryGlobe: document.querySelector("#country-globe"),
   nightMapStage: document.querySelector("#night-map-stage"),
-  earthCanvas: document.querySelector("#earth-canvas"),
+  globeRoot: document.querySelector("#globe-root"),
   nightZoomIn: document.querySelector("#night-zoom-in"),
   nightZoomOut: document.querySelector("#night-zoom-out"),
   nightReset: document.querySelector("#night-reset"),
@@ -162,6 +162,7 @@ let editingId = null;
 let selectedCity = null;
 let selectedStay = null;
 const earthState = {
+  globe: null,
   renderer: null,
   scene: null,
   camera: null,
@@ -1164,6 +1165,133 @@ function updateGlobePinPositions() {
     button.style.top = `${(-projected.y * 0.5 + 0.5) * rect.height}px`;
     button.style.opacity = String(Math.max(0.45, Math.min(1, worldPoint.z / 2.1)));
   });
+}
+
+function initEarthGlobe() {
+  if (!elements.globeRoot || !window.Globe) {
+    return;
+  }
+
+  const globe = new Globe(elements.globeRoot)
+    .backgroundColor("rgba(0,0,0,0)")
+    .globeImageUrl("https://upload.wikimedia.org/wikipedia/commons/2/2f/Solarsystemscope_texture_2k_earth_nightmap.jpg")
+    .bumpImageUrl("https://unpkg.com/three-globe/example/img/earth-topology.png")
+    .showAtmosphere(true)
+    .atmosphereColor("#8fb9ff")
+    .atmosphereAltitude(0.22)
+    .htmlLat((city) => city.lat)
+    .htmlLng((city) => city.lng)
+    .htmlAltitude(0.035)
+    .htmlElement(createGlobePinElement)
+    .polygonsData([])
+    .polygonAltitude(0.004)
+    .polygonCapColor(() => "rgba(255, 255, 255, 0.015)")
+    .polygonSideColor(() => "rgba(255, 255, 255, 0.005)")
+    .polygonStrokeColor(() => "rgba(232, 203, 129, 0.34)");
+
+  earthState.globe = globe;
+  resizeEarthGlobe();
+  resetEarthView();
+
+  const controls = globe.controls();
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.28;
+  controls.minDistance = 230;
+  controls.maxDistance = 720;
+
+  earthState.resizeObserver = new ResizeObserver(resizeEarthGlobe);
+  earthState.resizeObserver.observe(elements.nightMapStage);
+
+  fetch("https://cdn.jsdelivr.net/gh/vasturiano/globe.gl/example/datasets/ne_110m_admin_0_countries.geojson")
+    .then((response) => response.json())
+    .then((countries) => {
+      globe.polygonsData(countries.features ?? []);
+    })
+    .catch(() => {
+      globe.polygonsData([]);
+    });
+}
+
+function initEarthInteraction() {
+  elements.nightZoomIn?.addEventListener("click", () => zoomEarth(-0.28));
+  elements.nightZoomOut?.addEventListener("click", () => zoomEarth(0.28));
+  elements.nightReset?.addEventListener("click", resetEarthView);
+}
+
+function resizeEarthGlobe() {
+  if (!earthState.globe || !elements.nightMapStage) {
+    return;
+  }
+
+  const rect = elements.nightMapStage.getBoundingClientRect();
+  earthState.globe.width(Math.max(1, Math.floor(rect.width)));
+  earthState.globe.height(Math.max(1, Math.floor(rect.height)));
+}
+
+function resetEarthView() {
+  if (!earthState.globe) {
+    return;
+  }
+
+  earthState.globe.pointOfView({ lat: 32, lng: 104, altitude: 1.72 }, 800);
+  const controls = earthState.globe.controls();
+  if (controls) {
+    controls.autoRotate = true;
+  }
+}
+
+function zoomEarth(delta) {
+  if (!earthState.globe) {
+    return;
+  }
+
+  const pov = earthState.globe.pointOfView();
+  earthState.globe.pointOfView(
+    {
+      lat: pov.lat,
+      lng: pov.lng,
+      altitude: Math.max(0.85, Math.min(2.7, pov.altitude + delta))
+    },
+    350
+  );
+}
+
+function createGlobePinElement(city) {
+  const button = document.createElement("button");
+  button.className = "globe-pin";
+  button.type = "button";
+  button.innerHTML = `<span class="pin-dot"></span><span class="pin-label"><strong>${city.city}</strong><small>${city.count}次</small></span>`;
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    selectCity(city.city);
+  });
+  return button;
+}
+
+function renderGlobePins(groups) {
+  if (!earthState.globe) {
+    return;
+  }
+
+  const cities = [...groups.entries()]
+    .map(([city, cityRecords]) => {
+      const coordinates = getCityCoordinates(city, cityRecords);
+      if (!coordinates) {
+        return null;
+      }
+
+      return {
+        city,
+        count: cityRecords.length,
+        lat: coordinates.lat,
+        lng: coordinates.lng
+      };
+    })
+    .filter(Boolean);
+
+  earthState.globe.htmlElementsData(cities);
 }
 
 function renderPlaceMarkers(cityRecords) {

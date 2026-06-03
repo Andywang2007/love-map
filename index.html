@@ -50,7 +50,7 @@
             <div class="country-globe" id="country-globe" aria-label="夜间地球全国视图" hidden>
               <div class="star-field"></div>
               <div class="night-map-stage" id="night-map-stage" aria-label="可拖动旋转的夜间地球">
-                <canvas class="earth-canvas" id="earth-canvas" aria-label="3D 夜间地球"></canvas>
+                <div class="globe-root" id="globe-root" aria-label="3D 夜间地球"></div>
                 <div class="earth-glow"></div>
                 <div class="globe-pins" id="globe-pins"></div>
               </div>
@@ -188,7 +188,7 @@
       </form>
     </dialog>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/globe.gl"></script>
     <script src="./script.js"></script>
   </body>
 </html>
