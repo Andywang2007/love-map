@@ -380,12 +380,10 @@ h2 {
 
 .globe-pin {
   position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+  display: block;
+  width: 1px;
+  height: 1px;
   padding: 0;
-  translate: -50% -50%;
   border: 0;
   border-radius: 0;
   color: #fff4db;
@@ -401,9 +399,11 @@ h2 {
 }
 
 .pin-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 16px;
   height: 16px;
-  flex: 0 0 auto;
   border: 2px solid #fff3d5;
   border-radius: 50% 50% 50% 0;
   background: #ef3d3d;
@@ -411,10 +411,13 @@ h2 {
     0 0 0 5px rgba(239, 61, 61, 0.18),
     0 0 22px rgba(239, 61, 61, 0.72),
     0 12px 20px rgba(0, 0, 0, 0.35);
-  transform: rotate(-45deg);
+  transform: translate(-50%, -100%) rotate(-45deg);
 }
 
 .pin-label {
+  position: absolute;
+  left: 18px;
+  top: -34px;
   display: grid;
   gap: 1px;
   padding: 6px 9px;
@@ -423,6 +426,7 @@ h2 {
   background: rgba(4, 8, 15, 0.72);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(10px);
+  white-space: nowrap;
 }
 
 .pin-label strong {
