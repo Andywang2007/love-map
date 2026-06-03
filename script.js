@@ -98,6 +98,7 @@ const mapEnabled = Boolean(config.baiduAk);
 
 const elements = {
   mapCanvas: document.querySelector("#map-canvas"),
+  baiduMap: document.querySelector("#baidu-map"),
   mapLoading: document.querySelector("#map-loading"),
   countryGlobe: document.querySelector("#country-globe"),
   globePins: document.querySelector("#globe-pins"),
@@ -182,7 +183,7 @@ async function initMap() {
   try {
     await loadBaiduMap();
     const center = new BMapGL.Point(104.1954, 35.8617);
-    mapState.map = new BMapGL.Map("map-canvas");
+    mapState.map = new BMapGL.Map("baidu-map");
     mapState.map.centerAndZoom(center, 5);
     mapState.map.enableScrollWheelZoom(true);
     mapState.ready = true;
@@ -795,18 +796,21 @@ function renderMarkers(groups) {
   elements.globePins.innerHTML = "";
   clearMapOverlays();
 
+  const shouldShowCityMap = Boolean(activeCity && groups.has(activeCity));
+  elements.mapCanvas.classList.toggle("country-mode", !shouldShowCityMap);
+  elements.mapCanvas.classList.toggle("city-mode", shouldShowCityMap);
+  elements.countryGlobe.hidden = shouldShowCityMap;
+
+  if (!shouldShowCityMap) {
+    renderGlobePins(groups);
+    return;
+  }
+
   if (!mapState.ready) {
     return;
   }
 
-  if (activeCity && groups.has(activeCity)) {
-    elements.countryGlobe.hidden = true;
-    renderPlaceMarkers(groups.get(activeCity));
-    return;
-  }
-
-  elements.countryGlobe.hidden = false;
-  renderGlobePins(groups);
+  renderPlaceMarkers(groups.get(activeCity));
 }
 
 function projectCityToGlobe(coordinates) {

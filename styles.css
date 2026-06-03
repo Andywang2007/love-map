@@ -238,6 +238,17 @@ h2 {
   background: #101722;
 }
 
+.baidu-map {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.map-canvas.country-mode .baidu-map {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .country-globe {
   position: absolute;
   inset: 0;
